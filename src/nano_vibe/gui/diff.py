@@ -46,14 +46,18 @@ class GitDiffService:
         self.max_file_bytes = max_file_bytes
         self._baseline: dict[str, str] = {}
         self._pre_existing: set[str] = set()
+        self._baseline_captured = False
 
     def capture_baseline(self) -> None:
         self._baseline = self._file_digests()
         self._pre_existing = set(self._git_status())
+        self._baseline_captured = True
 
     def snapshot(self) -> DiffSnapshot:
-        if not self._baseline:
-            self.capture_baseline()
+        if not self._baseline_captured:
+            self._baseline = self._head_digests()
+            self._pre_existing = set(self._git_status())
+            self._baseline_captured = True
         current = self._file_digests()
         statuses = self._git_status()
         entries: list[DiffEntry] = []
@@ -118,3 +122,17 @@ class GitDiffService:
                 continue
             statuses[line[3:]] = line[:2].strip() or line[:2]
         return statuses
+
+    def _head_digests(self) -> dict[str, str]:
+        result = subprocess.run(
+            ["git", "-C", str(self.workspace), "ls-tree", "-r", "--name-only", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        digests: dict[str, str] = {}
+        for relative in result.stdout.splitlines():
+            path = self.workspace / relative
+            if path.is_file():
+                digests[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
+        return digests

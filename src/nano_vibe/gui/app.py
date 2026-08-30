@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from nano_vibe.config import AppConfig
+from nano_vibe.session_store import SessionStore, SessionStoreError
 
 from .agent_runner import GuiAgentRunner
 from .diff import GitDiffService
@@ -337,6 +338,20 @@ def create_app(
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail={"code": "session_not_found"}) from exc
+
+    @app.get("/api/v1/sessions/{session_id}", dependencies=[Depends(auth)])
+    async def get_session(session_id: str) -> dict[str, Any]:
+        try:
+            metadata = state.storage.get_session(session_id)
+            workspace = Path(state.storage.get_project(metadata.project_id).path)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail={"code": "session_not_found"}) from exc
+        snapshot = None
+        try:
+            snapshot = SessionStore(workspace / ".nano-vibe" / "sessions").load(session_id).to_dict()
+        except SessionStoreError:
+            pass
+        return {"metadata": _session_dict(metadata), "snapshot": snapshot}
 
     @app.post("/api/v1/sessions/{session_id}/messages", status_code=202, dependencies=[Depends(auth)])
     async def send_message(session_id: str, payload: MessageCreate) -> dict[str, Any]:

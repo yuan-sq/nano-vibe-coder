@@ -6,6 +6,7 @@ import pytest
 from nano_vibe.agent.loop import AgentLoop, LoopStatus
 from nano_vibe.agent.state import AgentState, StateMachine
 from nano_vibe.models.base import ModelResponse, ToolCall
+from nano_vibe.models.router import ModelRouter
 from nano_vibe.tools.registry import ToolRegistry
 from nano_vibe.tools.transition import TransitionTool
 
@@ -122,3 +123,23 @@ async def test_agent_loop_resets_turn_limit_for_a_new_task_after_done(tmp_path: 
 
     assert result.status is LoopStatus.WAITING
     assert machine.current is AgentState.IMPLEMENT
+
+
+@pytest.mark.asyncio
+async def test_agent_loop_uses_model_route_for_current_state(tmp_path: Path) -> None:
+    default = ScriptedModel([ModelResponse(content="default response")])
+    planner = ScriptedModel([ModelResponse(content="planner response")])
+    machine = StateMachine()
+    machine.current = AgentState.PLAN
+    router = ModelRouter(
+        {"default": default, "planner": planner},
+        active_model="default",
+        state_models={"PLAN": "planner"},
+    )
+    loop = AgentLoop(router, ToolRegistry(), machine, tmp_path)
+
+    result = await loop.handle_input("Plan this")
+
+    assert result.message == "planner response"
+    assert len(planner.requests) == 1
+    assert len(default.requests) == 0

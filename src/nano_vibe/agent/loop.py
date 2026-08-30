@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 from nano_vibe.models.base import Model, ModelResponse, ToolCall
+from nano_vibe.models.router import ModelRouter, ModelRoutingError
 from nano_vibe.observability.trace import TraceWriter
 from nano_vibe.tools.base import ToolResult
 from nano_vibe.tools.registry import ToolRegistry
@@ -35,7 +36,7 @@ class LoopResult:
 class AgentLoop:
     def __init__(
         self,
-        model: Model,
+        model: Model | ModelRouter,
         registry: ToolRegistry,
         machine: StateMachine,
         workspace: str | Path,
@@ -50,6 +51,7 @@ class AgentLoop:
         on_tool: Callable[[str, dict[str, Any]], None] | None = None,
     ) -> None:
         self.model = model
+        self.router = model if isinstance(model, ModelRouter) else None
         self.registry = registry
         self.machine = machine
         self.workspace = Path(workspace).resolve()
@@ -97,7 +99,7 @@ class AgentLoop:
             allowed = self.machine.allowed_tools()
             self._trace("model_request", state=self.machine.current.value, tool_count=len(allowed))
             try:
-                response = await self.model.complete(messages, self.registry.definitions(allowed))
+                response = await self._complete(messages, self.registry.definitions(allowed))
             except Exception as exc:
                 self._trace("model_error", state=self.machine.current.value, error=str(exc))
                 return LoopResult(LoopStatus.ERROR, f"Model request failed: {exc}", self._turns)
@@ -187,7 +189,7 @@ class AgentLoop:
                     "Summarize older context into a concise handoff with decisions, failures, and next steps.",
                 ),
             }
-            response = await self.model.complete([prompt, *older], [])
+            response = await self._complete([prompt, *older], [])
             return response.content or "(No summary was produced.)"
 
         compacted = await self.compactor.maybe_compact(self.history, summarize)
@@ -226,3 +228,26 @@ class AgentLoop:
     def _trace(self, event: str, **fields: Any) -> None:
         if self.trace is not None:
             self.trace.record(event, turn=self._turns, **fields)
+
+    async def _complete(
+        self,
+        messages: Sequence[Mapping[str, Any]],
+        tools: Sequence[Mapping[str, Any]],
+    ) -> ModelResponse:
+        if self.router is not None:
+            try:
+                response = await self.router.complete(self.machine.current, messages, tools)
+            except ModelRoutingError as exc:
+                self._trace(
+                    "model_fallback_exhausted",
+                    state=self.machine.current.value,
+                    attempts=list(exc.attempts),
+                )
+                raise
+            self._trace(
+                "model_selected",
+                state=self.machine.current.value,
+                model=self.router.candidate_names(self.machine.current)[0],
+            )
+            return response
+        return await self.model.complete(messages, tools)  # type: ignore[union-attr]

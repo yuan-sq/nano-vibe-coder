@@ -17,10 +17,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from .diff import GitDiffService
 from .events import SessionEventBuffer
 from .runtime import GlobalRunLock, LockAcquisitionError
 from .security import StartupToken, is_allowed_origin, validate_project_path
 from .storage import AppStorage, ProjectRecord, SessionMetadata
+from .trace import read_trace
 
 Runner = Callable[[str, str, Callable[[str, dict[str, Any]], Awaitable[None]], asyncio.Event], Any]
 
@@ -336,6 +338,31 @@ def create_app(
         if not await state.coordinator.stop(run_id):
             raise HTTPException(status_code=404, detail={"code": "run_not_found"})
         return {"run_id": run_id, "status": "PAUSED"}
+
+    def _session_workspace(session_id: str) -> Path:
+        try:
+            session = state.storage.get_session(session_id)
+            return Path(state.storage.get_project(session.project_id).path)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail={"code": "session_not_found"}) from exc
+
+    @app.get("/api/v1/sessions/{session_id}/diff", dependencies=[Depends(auth)])
+    async def session_diff(session_id: str) -> dict[str, object]:
+        workspace = _session_workspace(session_id)
+        return GitDiffService(workspace).snapshot().to_dict()
+
+    @app.get("/api/v1/sessions/{session_id}/trace", dependencies=[Depends(auth)])
+    async def session_trace(
+        session_id: str,
+        event: str | None = None,
+        offset: int = 0,
+        limit: int = 100,
+    ) -> dict[str, object]:
+        workspace = _session_workspace(session_id)
+        trace_root = workspace / "runs"
+        candidates = sorted(trace_root.glob("**/*.jsonl")) if trace_root.is_dir() else []
+        page = read_trace(candidates[-1], event=event, offset=offset, limit=limit) if candidates else read_trace(trace_root / "missing.jsonl")
+        return {"items": page.items, "total": page.total}
 
     @app.websocket("/api/v1/ws/{session_id}")
     async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:

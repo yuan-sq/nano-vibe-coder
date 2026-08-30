@@ -16,13 +16,16 @@ def build_context(
     history: Sequence[dict[str, Any]],
     summary: str | None = None,
     plan: Sequence[Mapping[str, Any]] | None = None,
+    skills: Sequence[Mapping[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     plan_content = json.dumps(list(plan or ()), ensure_ascii=False, sort_keys=True)
+    skill_content = json.dumps(list(skills or ()), ensure_ascii=False, sort_keys=True)
     sections = [
         system_prompt.strip(),
         f"Current state: {state}\n{stage_prompt.strip()}",
         "Repository guidance:\n" + (agents_content.strip() or "(no AGENTS.md found)"),
         "Plan Todo (JSON):\n" + plan_content,
+        "Loaded skills (JSON):\n" + skill_content,
     ]
     messages: list[dict[str, Any]] = [{"role": "system", "content": "\n\n".join(sections)}]
     if summary:

@@ -11,6 +11,7 @@ from typing import Any, Callable, Mapping, Sequence
 from nano_vibe.models.base import Model, ModelResponse, ToolCall
 from nano_vibe.models.router import ModelRouter, ModelRoutingError
 from nano_vibe.observability.trace import TraceWriter
+from nano_vibe.skills import SkillManager
 from nano_vibe.tools.base import ToolResult
 from nano_vibe.tools.registry import ToolRegistry
 
@@ -49,6 +50,7 @@ class AgentLoop:
         compact_target_ratio: float = 0.50,
         tokenizer: Tokenizer | None = None,
         on_tool: Callable[[str, dict[str, Any]], None] | None = None,
+        skill_manager: SkillManager | None = None,
     ) -> None:
         self.model = model
         self.router = model if isinstance(model, ModelRouter) else None
@@ -63,6 +65,7 @@ class AgentLoop:
         self._turns = 0
         self._tool_errors = 0
         self.on_tool = on_tool
+        self.skill_manager = skill_manager
         self.compactor = ContextCompactor(
             tokenizer or ApproximateTokenizer(),
             context_window=context_window,
@@ -96,6 +99,7 @@ class AgentLoop:
                 history=self.history,
                 summary=self.summary,
                 plan=self.machine.plan.to_list(),
+                skills=(self.skill_manager.context_entries() if self.skill_manager else None),
             )
             allowed = self.machine.allowed_tools()
             self._trace("model_request", state=self.machine.current.value, tool_count=len(allowed))

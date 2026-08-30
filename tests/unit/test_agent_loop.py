@@ -7,6 +7,7 @@ from nano_vibe.agent.loop import AgentLoop, LoopStatus
 from nano_vibe.agent.state import AgentState, StateMachine
 from nano_vibe.models.base import ModelResponse, ToolCall
 from nano_vibe.models.router import ModelRouter
+from nano_vibe.skills import SkillManager
 from nano_vibe.tools.registry import ToolRegistry
 from nano_vibe.tools.transition import TransitionTool
 
@@ -165,3 +166,27 @@ async def test_agent_loop_replays_same_tool_call_id_without_second_side_effect(t
 
     assert result.message == "continued"
     assert machine.current is AgentState.PLAN
+
+
+@pytest.mark.asyncio
+async def test_agent_loop_injects_loaded_skill_into_model_context(tmp_path: Path) -> None:
+    skill_dir = tmp_path / ".agents" / "skills" / "demo"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: demo\ndescription: A demo.\n---\nUse this skill.\n", encoding="utf-8"
+    )
+    skill_manager = SkillManager(tmp_path)
+    skill_manager.load("demo")
+    model = ScriptedModel([ModelResponse(content="seen")])
+    loop = AgentLoop(
+        model,
+        ToolRegistry(),
+        StateMachine(),
+        tmp_path,
+        skill_manager=skill_manager,
+    )
+
+    await loop.handle_input("Inspect")
+
+    system_message = model.requests[0][0][0]["content"]
+    assert "Use this skill." in system_message

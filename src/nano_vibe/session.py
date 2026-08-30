@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import uuid
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,7 @@ from nano_vibe.models.router import ModelRouter
 from nano_vibe.observability.trace import TraceWriter
 from nano_vibe.permissions import PermissionMode, PermissionPolicy
 from nano_vibe.session_store import SessionSnapshot, SessionStore, SessionStoreError
+from nano_vibe.skills import SkillManager
 from nano_vibe.tools.apply_patch import ApplyPatchTool
 from nano_vibe.tools.registry import ToolRegistry
 from nano_vibe.tools.shell import ShellTool
@@ -24,6 +26,7 @@ from nano_vibe.tools.update_agents import UpdateAgentsTool
 from nano_vibe.tools.update_plan import UpdatePlanTool
 from nano_vibe.tools.user_request import UserRequestTool
 from nano_vibe.tools.web_search import WebSearchTool
+from nano_vibe.tools.skills import LoadSkillTool, ReadSkillTool, UnloadSkillTool
 
 
 class Session:
@@ -40,6 +43,8 @@ class Session:
         permission_mode: PermissionMode | str = PermissionMode.NORMAL,
         permission_approve: Any | None = None,
         permission_policy: PermissionPolicy | None = None,
+        skill_manager: SkillManager | None = None,
+        skill_roots: Iterable[str | Path] | None = None,
         max_model_turns: int = 100,
         max_consecutive_tool_errors: int = 5,
         context_window: int = 128_000,
@@ -58,6 +63,10 @@ class Session:
         self.session_store = session_store or SessionStore(self.workspace / ".nano-vibe" / "sessions")
         self.session_id = session_id or uuid.uuid4().hex[:12]
         self.session_store.path_for(self.session_id)
+        self.skill_manager = skill_manager or SkillManager(
+            self.workspace,
+            skill_roots=skill_roots,
+        )
         permission_policy = permission_policy or PermissionPolicy(
             self.permission_mode,
             approve=permission_approve,
@@ -75,6 +84,9 @@ class Session:
                     TransitionTool(self.machine),
                     UpdateAgentsTool(self.workspace, self.machine),
                     UpdatePlanTool(self.machine),
+                    LoadSkillTool(self.skill_manager),
+                    ReadSkillTool(self.skill_manager),
+                    UnloadSkillTool(self.skill_manager),
                     WebSearchTool(),
                 ],
                 permission_policy=permission_policy,
@@ -94,6 +106,7 @@ class Session:
             compact_ratio=compact_ratio,
             compact_target_ratio=compact_target_ratio,
             on_tool=on_tool,
+            skill_manager=self.skill_manager,
         )
 
     async def handle_input(self, text: str) -> LoopResult:
@@ -116,7 +129,7 @@ class Session:
             turns=self.loop._turns,
             tool_errors=self.loop._tool_errors,
             idempotency_records=self.registry.idempotency_records,
-            loaded_skills=list(getattr(self, "loaded_skills", [])),
+            loaded_skills=self.skill_manager.loaded_names,
         )
 
     def save_snapshot(self) -> Path:
@@ -138,7 +151,7 @@ class Session:
         self.loop._turns = snapshot.turns
         self.loop._tool_errors = snapshot.tool_errors
         self.registry.restore_idempotency(snapshot.idempotency_records)
-        self.loaded_skills = list(snapshot.loaded_skills)
+        self.skill_manager.restore(snapshot.loaded_skills)
 
     @classmethod
     def resume(

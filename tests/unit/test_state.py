@@ -48,6 +48,9 @@ def test_tool_permissions_depend_on_current_state() -> None:
         "user_request",
         "transition_state",
         "web_search",
+        "load_skill",
+        "read_skill",
+        "unload_skill",
     }
     machine.transition(AgentState.PLAN)
     assert "apply_patch" not in machine.allowed_tools()

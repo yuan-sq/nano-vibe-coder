@@ -31,3 +31,17 @@ def test_build_context_includes_structured_plan_when_present() -> None:
 
     assert "Plan Todo" in result[0]["content"]
     assert '"status": "in_progress"' in result[0]["content"]
+
+
+def test_build_context_includes_loaded_skill_context() -> None:
+    result = build_context(
+        system_prompt="system",
+        stage_prompt="plan",
+        agents_content="rules",
+        state="PLAN",
+        history=[],
+        skills=[{"name": "demo", "description": "A demo", "content": "Use it."}],
+    )
+
+    assert "Loaded skills" in result[0]["content"]
+    assert "Use it." in result[0]["content"]

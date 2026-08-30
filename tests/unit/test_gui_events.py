@@ -87,6 +87,31 @@ def test_pending_interaction_round_trips_approval_json() -> None:
     assert PendingInteraction.from_json(interaction.to_json()) == interaction
 
 
+def test_pending_interaction_round_trips_user_request_json() -> None:
+    interaction = PendingInteraction(
+        interaction_id="interaction-2",
+        kind="user_request",
+        content="请选择目标环境",
+        options=("测试", "生产"),
+    )
+
+    assert PendingInteraction.from_json(interaction.to_json()) == interaction
+
+
+def test_ui_event_requires_run_id_in_wire_envelope() -> None:
+    event = {
+        "version": 1,
+        "session_id": "session-1",
+        "seq": 1,
+        "type": "run_started",
+        "timestamp": "2026-08-31T00:00:00+00:00",
+        "payload": {},
+    }
+
+    with pytest.raises(ValueError, match="missing UI event fields: run_id"):
+        UIEvent.from_dict(event)
+
+
 def test_runtime_state_contains_gui_run_states() -> None:
     assert [state.value for state in RuntimeState] == [
         "IDLE",

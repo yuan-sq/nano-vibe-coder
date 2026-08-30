@@ -43,7 +43,7 @@ class UIEvent:
     def from_dict(cls, value: dict[str, Any]) -> UIEvent:
         if value.get("version") != 1:
             raise ValueError(f"unsupported UI event version: {value.get('version')!r}")
-        required = ("session_id", "seq", "type", "timestamp", "payload")
+        required = ("session_id", "run_id", "seq", "type", "timestamp", "payload")
         missing = [key for key in required if key not in value]
         if missing:
             raise ValueError(f"missing UI event fields: {', '.join(missing)}")
@@ -61,7 +61,7 @@ class UIEvent:
     def from_json(cls, value: str) -> UIEvent:
         decoded = json.loads(value)
         if not isinstance(decoded, dict):
-            raise ValueError("UI event JSON must contain an object")
+            raise TypeError("UI event JSON must contain an object")
         return cls.from_dict(decoded)
 
 

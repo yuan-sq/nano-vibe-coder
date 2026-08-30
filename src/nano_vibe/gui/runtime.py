@@ -81,7 +81,7 @@ class PendingInteraction:
     def from_json(cls, value: str) -> PendingInteraction:
         decoded = json.loads(value)
         if not isinstance(decoded, dict):
-            raise ValueError("pending interaction JSON must contain an object")
+            raise TypeError("pending interaction JSON must contain an object")
         return cls.from_dict(decoded)
 
 
@@ -129,7 +129,7 @@ class GlobalRunLock:
         finally:
             os.close(fd)
 
-    def __enter__(self) -> GlobalRunLock:
+    def __enter__(self) -> GlobalRunLock:  # noqa: PYI034 - Python 3.10 has no typing.Self.
         self.acquire()
         return self
 

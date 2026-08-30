@@ -13,6 +13,7 @@ from .base import Tool, ToolResult
 class ShellTool(Tool):
     name = "shell"
     description = "Run a shell command in the target repository."
+    permission_scope = "shell"
     parameters = {
         "type": "object",
         "properties": {"command": {"type": "string"}},

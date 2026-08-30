@@ -13,6 +13,7 @@ from .base import Tool, ToolResult
 class ApplyPatchTool(Tool):
     name = "apply_patch"
     description = "Validate and apply a unified diff in the target Git repository."
+    permission_scope = "write"
     parameters = {
         "type": "object",
         "properties": {"diff": {"type": "string"}},

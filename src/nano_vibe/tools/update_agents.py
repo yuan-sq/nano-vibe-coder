@@ -16,6 +16,7 @@ from .base import Tool, ToolResult
 class UpdateAgentsTool(Tool):
     name = "update_agents"
     description = "Review and write the complete AGENTS.md for the target repository."
+    permission_scope = "write"
     parameters = {
         "type": "object",
         "properties": {"content": {"type": "string"}},

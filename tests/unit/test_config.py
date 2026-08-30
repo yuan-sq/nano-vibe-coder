@@ -57,3 +57,59 @@ def test_load_config_rejects_unknown_active_model(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigError, match="active_model"):
         load_config(path)
+
+
+def test_load_config_reads_v2_permissions_routes_and_tavily_settings(tmp_path: Path) -> None:
+    path = write_config(
+        tmp_path,
+        """
+        active_model = "default"
+
+        [models.default]
+        name = "default"
+        url = "https://example.test/v1"
+        model_name = "demo"
+
+        [models.fallback]
+        name = "fallback"
+        url = "https://fallback.test/v1"
+        model_name = "fallback-demo"
+
+        [runtime]
+        permission_mode = "full-access"
+        session_dir = ".sessions"
+
+        [routing]
+        REQUIREMENTS = "fallback"
+        fallback = ["default"]
+
+        [tavily]
+        env_file = ".env.test"
+        """,
+    )
+
+    config = load_config(path)
+
+    assert config.runtime.permission_mode == "full-access"
+    assert config.runtime.session_dir == ".sessions"
+    assert config.state_models["REQUIREMENTS"].name == "fallback"
+    assert config.fallback_models == ("default",)
+    assert config.tavily.env_file == ".env.test"
+
+
+def test_load_config_rejects_unknown_permission_mode(tmp_path: Path) -> None:
+    path = write_config(
+        tmp_path,
+        """
+        active_model = "default"
+        [models.default]
+        name = "default"
+        url = "https://example.test/v1"
+        model_name = "demo"
+        [runtime]
+        permission_mode = "sandbox"
+        """,
+    )
+
+    with pytest.raises(ConfigError, match="permission_mode"):
+        load_config(path)

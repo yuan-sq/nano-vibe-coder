@@ -10,6 +10,7 @@ from .base import Tool, ToolResult
 class WebSearchTool(Tool):
     name = "web_search"
     description = "Search the web for information (not available in v1)."
+    permission_scope = "network"
     parameters = {
         "type": "object",
         "properties": {"query": {"type": "string"}},

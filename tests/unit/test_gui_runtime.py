@@ -86,7 +86,8 @@ class _Model:
             ModelResponse(content="done"),
         ]
 
-    async def complete(self, _messages: Any, _tools: Any) -> ModelResponse:
+    async def complete(self, messages: Any, tools: Any) -> ModelResponse:
+        del messages, tools
         return self.responses.pop(0)
 
 

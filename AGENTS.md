@@ -136,6 +136,12 @@ Agent 状态为 REQUIREMENTS、PLAN、IMPLEMENT、VERIFY、DONE。Plan Todo 只�
 `pending`、`in_progress`、`completed`，同一计划最多一个进行中，且 VERIFY
 到 DONE 前必须全部完成。normal/full-access 是应用层审批策略，不是 OS 沙箱。
 技能遵循 Codex `SKILL.md` 格式并只读加载；会话快照必须通过明确的
-`--resume SESSION_ID` 恢复。不要实现 Goal、评测框架、TUI/GUI 或 Tavily
-Crawl/Map/Research。
+`--resume SESSION_ID` 恢复。不要实现 Goal、评测框架、远程 GUI、多 Agent 队列、
+GUI 编辑/回滚、交互式终端或 Tavily Crawl/Map/Research。V3 GUI 使用 FastAPI +
+原生 WebSocket + 独立 React/npm 前端；Chainlit 仅可选择性复用展示组件并保留
+Apache-2.0 声明。
 
+V3 GUI 约定：后端只绑定 `127.0.0.1`，全局一次只运行一个 Agent 任务；运行中的
+Session 使用不可变配置，配置保存从下一次用户输入生效。浏览器断开不停止任务，
+审批和 user_request 必须写入 SessionSnapshot 后才能等待。AGENTS.md 的修改仍由
+Agent 以前台工具调用完成，且只有所有 Plan Todo 完成、验证通过后才能进入 DONE。

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import json
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 
@@ -14,11 +15,14 @@ def build_context(
     state: str,
     history: Sequence[dict[str, Any]],
     summary: str | None = None,
+    plan: Sequence[Mapping[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
+    plan_content = json.dumps(list(plan or ()), ensure_ascii=False, sort_keys=True)
     sections = [
         system_prompt.strip(),
         f"Current state: {state}\n{stage_prompt.strip()}",
         "Repository guidance:\n" + (agents_content.strip() or "(no AGENTS.md found)"),
+        "Plan Todo (JSON):\n" + plan_content,
     ]
     messages: list[dict[str, Any]] = [{"role": "system", "content": "\n\n".join(sections)}]
     if summary:

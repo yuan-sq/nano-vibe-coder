@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from enum import Enum
 
+from .plan import PlanTodoList
+
 
 class AgentState(str, Enum):
     REQUIREMENTS = "REQUIREMENTS"
@@ -30,13 +32,27 @@ _TOOLS_BY_STATE: dict[AgentState, frozenset[str]] = {
         {"shell", "user_request", "transition_state", "web_search"}
     ),
     AgentState.PLAN: frozenset(
-        {"shell", "user_request", "transition_state", "web_search"}
+        {"shell", "user_request", "transition_state", "update_plan", "web_search"}
     ),
     AgentState.IMPLEMENT: frozenset(
-        {"shell", "apply_patch", "user_request", "transition_state", "web_search"}
+        {
+            "shell",
+            "apply_patch",
+            "user_request",
+            "transition_state",
+            "update_plan",
+            "web_search",
+        }
     ),
     AgentState.VERIFY: frozenset(
-        {"shell", "user_request", "transition_state", "update_agents", "web_search"}
+        {
+            "shell",
+            "user_request",
+            "transition_state",
+            "update_agents",
+            "update_plan",
+            "web_search",
+        }
     ),
     AgentState.DONE: frozenset(),
 }
@@ -45,9 +61,10 @@ _TOOLS_BY_STATE: dict[AgentState, frozenset[str]] = {
 class StateMachine:
     """Track the current task phase and enforce meaningful transitions."""
 
-    def __init__(self) -> None:
+    def __init__(self, plan: PlanTodoList | None = None) -> None:
         self.current = AgentState.REQUIREMENTS
         self.agents_updated = False
+        self.plan = plan or PlanTodoList()
 
     def transition(self, target: AgentState | str) -> AgentState:
         try:
@@ -61,6 +78,8 @@ class StateMachine:
             )
         if target_state is AgentState.DONE and not self.agents_updated:
             raise InvalidTransition("AGENTS.md must be reviewed before entering DONE")
+        if target_state is AgentState.DONE and not self.plan.all_completed:
+            raise InvalidTransition("Plan Todo must be complete before entering DONE")
 
         if target_state is AgentState.VERIFY or self.current is AgentState.VERIFY:
             self.agents_updated = False
@@ -80,3 +99,4 @@ class StateMachine:
             raise InvalidTransition("only a completed task can be reset")
         self.current = AgentState.REQUIREMENTS
         self.agents_updated = False
+        self.plan = PlanTodoList()

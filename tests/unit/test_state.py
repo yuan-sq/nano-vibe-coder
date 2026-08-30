@@ -32,6 +32,9 @@ def test_done_requires_agents_review() -> None:
     with pytest.raises(InvalidTransition, match="AGENTS"):
         machine.transition(AgentState.DONE)
 
+    machine.plan.replace(
+        [{"id": "verify", "content": "Run verification", "status": "completed"}]
+    )
     machine.mark_agents_updated()
     machine.transition(AgentState.DONE)
     assert machine.current is AgentState.DONE

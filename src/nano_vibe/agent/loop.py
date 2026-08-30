@@ -95,6 +95,7 @@ class AgentLoop:
                 state=self.machine.current.value,
                 history=self.history,
                 summary=self.summary,
+                plan=self.machine.plan.to_list(),
             )
             allowed = self.machine.allowed_tools()
             self._trace("model_request", state=self.machine.current.value, tool_count=len(allowed))

@@ -11,6 +11,7 @@ from nano_vibe.tools.apply_patch import ApplyPatchTool
 from nano_vibe.tools.registry import ToolRegistry
 from nano_vibe.tools.shell import ShellTool
 from nano_vibe.tools.transition import TransitionTool
+from nano_vibe.tools.update_plan import UpdatePlanTool
 from nano_vibe.tools.update_agents import UpdateAgentsTool
 
 
@@ -43,6 +44,7 @@ async def test_agent_loop_completes_full_task_and_updates_agents(tmp_path: Path)
             ShellTool(tmp_path, timeout_seconds=5),
             ApplyPatchTool(tmp_path),
             TransitionTool(machine),
+            UpdatePlanTool(machine),
             UpdateAgentsTool(tmp_path, machine),
         ]
     )
@@ -56,6 +58,12 @@ async def test_agent_loop_completes_full_task_and_updates_agents(tmp_path: Path)
     model = ScriptedModel(
         [
             call("transition_state", target_state="PLAN"),
+            call(
+                "update_plan",
+                items=[
+                    {"id": "change", "content": "Change hello.txt", "status": "completed"}
+                ],
+            ),
             call("transition_state", target_state="IMPLEMENT"),
             call("apply_patch", diff=diff),
             call("transition_state", target_state="VERIFY"),

@@ -1,0 +1,19 @@
+active_model = "default"
+
+[models.default]
+name = "default"
+url = "https://api.example.com/v1"
+api_key = "replace-me"
+model_name = "your-tool-calling-model"
+reasoning_level = "medium"
+description = "OpenAI-compatible coding model"
+context_window = 128000
+
+[runtime]
+max_model_turns = 100
+max_consecutive_tool_errors = 5
+api_retries = 5
+shell_timeout_seconds = 300
+shell_max_output_chars = 50000
+compact_ratio = 0.75
+compact_target_ratio = 0.50

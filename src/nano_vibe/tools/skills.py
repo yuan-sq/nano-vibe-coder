@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 from nano_vibe.skills import SkillError, SkillManager
 
@@ -13,7 +13,7 @@ class LoadSkillTool(Tool):
     name = "load_skill"
     description = "Load a Codex-compatible SKILL.md package into the task context."
     permission_scope = "read"
-    parameters = {
+    parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {"name": {"type": "string"}},
         "required": ["name"],
@@ -43,7 +43,7 @@ class ReadSkillTool(Tool):
     name = "read_skill"
     description = "Read a file from a previously discoverable skill package."
     permission_scope = "read"
-    parameters = {
+    parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "name": {"type": "string"},
@@ -72,7 +72,7 @@ class UnloadSkillTool(Tool):
     name = "unload_skill"
     description = "Remove a loaded skill from the task context without deleting files."
     permission_scope = "read"
-    parameters = {
+    parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {"name": {"type": "string"}},
         "required": ["name"],

@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any
 
 from nano_vibe.models.base import Model, ModelResponse, ToolCall
 from nano_vibe.models.router import ModelRouter, ModelRoutingError
@@ -105,7 +106,7 @@ class AgentLoop:
             self._trace("model_request", state=self.machine.current.value, tool_count=len(allowed))
             try:
                 response = await self._complete(messages, self.registry.definitions(allowed))
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - model providers are untrusted boundaries
                 self._trace("model_error", state=self.machine.current.value, error=str(exc))
                 return LoopResult(LoopStatus.ERROR, f"Model request failed: {exc}", self._turns)
 
@@ -128,6 +129,7 @@ class AgentLoop:
                         "tool_call_id": call.id,
                         "name": call.name,
                         "content": result.output,
+                        **({"tool_error": result.error.to_dict()} if result.error else {}),
                     }
                 )
                 if not result.ok:
@@ -161,7 +163,7 @@ class AgentLoop:
                     self.machine.allowed_tools(),
                     idempotency_key=call.id or None,
                 )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - convert every tool failure to ToolResult
                 result = ToolResult.failure(str(exc))
         self._trace(
             "tool_end",

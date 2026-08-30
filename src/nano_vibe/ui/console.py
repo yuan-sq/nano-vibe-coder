@@ -24,6 +24,16 @@ class ConsoleUI:
             return options[int(answer) - 1]
         return answer
 
+    def approve(self, tool_name: str, arguments: dict[str, object]) -> bool:
+        """Ask for application-level approval of a restricted tool call."""
+
+        details = ", ".join(f"{key}={value!r}" for key, value in arguments.items())
+        answer = Prompt.ask(
+            f"Allow restricted tool {tool_name}({details})? [y/N]",
+            default="N",
+        )
+        return answer.strip().lower() in {"y", "yes"}
+
     def write_stream(self, text: str) -> None:
         self.console.print(text, end="")
 

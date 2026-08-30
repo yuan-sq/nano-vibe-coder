@@ -21,13 +21,13 @@ from nano_vibe.skills import SkillManager
 from nano_vibe.tools.apply_patch import ApplyPatchTool
 from nano_vibe.tools.registry import ToolRegistry
 from nano_vibe.tools.shell import ShellTool
+from nano_vibe.tools.skills import LoadSkillTool, ReadSkillTool, UnloadSkillTool
 from nano_vibe.tools.transition import TransitionTool
 from nano_vibe.tools.update_agents import UpdateAgentsTool
 from nano_vibe.tools.update_plan import UpdatePlanTool
 from nano_vibe.tools.user_request import UserRequestTool
-from nano_vibe.tools.web_search import WebSearchTool
 from nano_vibe.tools.web_extract import WebExtractTool
-from nano_vibe.tools.skills import LoadSkillTool, ReadSkillTool, UnloadSkillTool
+from nano_vibe.tools.web_search import WebSearchTool
 
 
 class Session:
@@ -165,7 +165,7 @@ class Session:
         *,
         session_store: SessionStore | None = None,
         **kwargs: Any,
-    ) -> "Session":
+    ) -> Session:
         workspace_path = Path(workspace).resolve()
         store = session_store or SessionStore(workspace_path / ".nano-vibe" / "sessions")
         snapshot = store.load(session_id)
@@ -191,7 +191,8 @@ class Session:
         ui: Any,
         *,
         session_id: str | None = None,
-    ) -> "Session":
+        permission_mode: PermissionMode | str | None = None,
+    ) -> Session:
         workspace_path = Path(workspace).resolve()
         project_root = Path(__file__).resolve().parents[2]
         workspace_id = hashlib.sha256(str(workspace_path).encode()).hexdigest()[:12]
@@ -221,6 +222,7 @@ class Session:
                 for state, model_config in config.state_models.items()
             },
             fallback_models=config.fallback_models,
+            state_fallbacks=config.state_fallbacks,
         )
         return cls(
             router,
@@ -232,7 +234,7 @@ class Session:
                 if Path(config.runtime.session_dir).is_absolute()
                 else workspace_path / config.runtime.session_dir
             ),
-            permission_mode=config.runtime.permission_mode,
+            permission_mode=permission_mode or config.runtime.permission_mode,
             permission_approve=getattr(ui, "approve", None),
             skill_roots=config.skill_roots or None,
             max_model_turns=config.runtime.max_model_turns,

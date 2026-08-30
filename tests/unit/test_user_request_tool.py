@@ -1,4 +1,3 @@
-from typing import Awaitable, Callable
 
 import pytest
 

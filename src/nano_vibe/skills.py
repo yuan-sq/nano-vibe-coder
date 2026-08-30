@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Mapping
 
 
 class SkillError(ValueError):
@@ -51,7 +51,12 @@ class SkillManager:
             self.workspace / ".agents" / "skills",
             self.workspace / ".codex" / "skills",
         )
-        self.skill_roots = tuple(Path(root).expanduser().resolve() for root in roots)
+        self.skill_roots = tuple(
+            (self.workspace / Path(root) if not Path(root).expanduser().is_absolute() else Path(root))
+            .expanduser()
+            .resolve()
+            for root in roots
+        )
         if max_skill_chars <= 0:
             raise ValueError("max_skill_chars must be positive")
         self.max_skill_chars = max_skill_chars
@@ -105,6 +110,8 @@ class SkillManager:
         self._loaded[name] = loaded
         return loaded
 
+    load_skill = load
+
     def read(self, name: str, relative_path: str = "SKILL.md") -> str:
         skill = self._loaded.get(name) or self.load(name)
         if not isinstance(relative_path, str) or not relative_path.strip():
@@ -127,8 +134,12 @@ class SkillManager:
             raise SkillError("skill file exceeds the maximum size")
         return content
 
+    read_skill = read
+
     def unload(self, name: str) -> bool:
         return self._loaded.pop(name, None) is not None
+
+    unload_skill = unload
 
     def restore(self, names: Iterable[str]) -> None:
         self._loaded.clear()

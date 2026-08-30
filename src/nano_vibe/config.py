@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 try:  # Python 3.11+
-    import tomllib
+    import tomllib  # type: ignore[reportMissingImports]
 except ModuleNotFoundError:  # pragma: no cover - exercised on Python 3.10
     import tomli as tomllib  # type: ignore[no-redef]
 
@@ -47,7 +48,8 @@ class AppConfig:
     runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
     state_models: Mapping[str, ModelConfig] = field(default_factory=dict)
     fallback_models: tuple[str, ...] = ()
-    tavily: "TavilyConfig" = field(default_factory=lambda: TavilyConfig())
+    state_fallbacks: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    tavily: TavilyConfig = field(default_factory=lambda: TavilyConfig())
     skill_roots: tuple[str, ...] = ()
 
 
@@ -231,6 +233,20 @@ def load_config(path: str | Path) -> AppConfig:
     for model_name in fallback_models:
         if model_name not in models:
             raise ConfigError(f"fallback model '{model_name}' is not defined in models")
+    raw_state_fallbacks = raw.get("state_fallbacks", raw_routing.get("fallbacks", {}))
+    if raw_state_fallbacks is None:
+        raw_state_fallbacks = {}
+    if not isinstance(raw_state_fallbacks, Mapping):
+        raise ConfigError("state_fallbacks must be a table")
+    state_fallbacks: dict[str, tuple[str, ...]] = {}
+    for state, values in raw_state_fallbacks.items():
+        if not isinstance(state, str):
+            raise ConfigError("state_fallbacks keys must be state names")
+        names = _string_list(values, f"state_fallbacks.{state}")
+        for model_name in names:
+            if model_name not in models:
+                raise ConfigError(f"fallback model '{model_name}' is not defined in models")
+        state_fallbacks[state.upper()] = names
 
     raw_tavily = raw.get("tavily", {})
     if not isinstance(raw_tavily, Mapping):
@@ -247,6 +263,7 @@ def load_config(path: str | Path) -> AppConfig:
         runtime=_runtime_from_values(raw_runtime),
         state_models=state_models,
         fallback_models=fallback_models,
+        state_fallbacks=state_fallbacks,
         tavily=_tavily_from_values(raw_tavily),
         skill_roots=skill_roots,
     )

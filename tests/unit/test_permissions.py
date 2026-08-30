@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -11,7 +11,7 @@ class DangerousTool(Tool):
     name = "dangerous"
     description = "A tool that changes external state."
     permission_scope = "write"
-    parameters = {"type": "object", "properties": {}}
+    parameters: ClassVar[dict[str, Any]] = {"type": "object", "properties": {}}
 
     async def execute(self, arguments: dict[str, Any]) -> ToolResult:
         del arguments
@@ -66,7 +66,7 @@ async def test_registry_returns_structured_error_for_tool_exception() -> None:
     class BrokenTool(Tool):
         name = "broken"
         description = "Raises."
-        parameters = {"type": "object", "properties": {}}
+        parameters: ClassVar[dict[str, Any]] = {"type": "object", "properties": {}}
 
         async def execute(self, arguments: dict[str, Any]) -> ToolResult:
             del arguments

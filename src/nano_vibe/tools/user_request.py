@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any, ClassVar
 
 from .base import Tool, ToolResult
 
@@ -14,7 +15,7 @@ AnswerCallback = Callable[[str, list[str]], Awaitable[str] | str]
 class UserRequestTool(Tool):
     name = "user_request"
     description = "Ask the user one question with 2 to 4 options and free-text input."
-    parameters = {
+    parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "question": {"type": "string"},

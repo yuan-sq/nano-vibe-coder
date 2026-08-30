@@ -1,5 +1,6 @@
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, cast
 
 import pytest
 
@@ -7,6 +8,7 @@ from nano_vibe.agent.loop import LoopStatus
 from nano_vibe.models.base import ModelResponse
 from nano_vibe.session import Session
 from nano_vibe.session_store import SessionStore
+from nano_vibe.tools.shell import ShellTool
 
 
 class PlainModel:
@@ -35,7 +37,7 @@ def test_session_applies_shell_runtime_limits(tmp_path: Path) -> None:
         shell_max_output_chars=123,
     )
 
-    shell = session.registry._tools["shell"]
+    shell = cast(ShellTool, session.registry._tools["shell"])
     assert shell.timeout_seconds == 7
     assert shell.max_output_chars == 123
 

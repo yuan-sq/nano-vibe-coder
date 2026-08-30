@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 from nano_vibe.agent.state import StateMachine
 
@@ -12,7 +12,7 @@ from .base import Tool, ToolResult
 class TransitionTool(Tool):
     name = "transition_state"
     description = "Move the task to a valid next or previous phase."
-    parameters = {
+    parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "target_state": {

@@ -13,7 +13,30 @@ context_window = 128000
 max_model_turns = 100
 max_consecutive_tool_errors = 5
 api_retries = 5
+permission_mode = "normal"             # normal or full-access (application policy)
+session_dir = ".nano-vibe/sessions"
 shell_timeout_seconds = 300
 shell_max_output_chars = 50000
 compact_ratio = 0.75
 compact_target_ratio = 0.50
+
+# Optional static state routing. Unlisted states use active_model.
+[routing]
+fallback = ["default"]
+# PLAN = "planner"
+# IMPLEMENT = "executor"
+# [routing.fallbacks]
+# PLAN = ["default"]
+
+[tavily]
+# The file is read explicitly relative to the target workspace.
+env_file = ".env"
+search_depth = "basic"
+max_results = 5
+max_extract_urls = 5
+max_extract_chars = 30000
+
+[skills]
+# Additional roots are optional; workspace/.agents/skills and workspace/.codex/skills
+# are always checked.
+roots = []

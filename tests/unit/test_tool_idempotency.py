@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -10,7 +10,10 @@ class CountingTool(Tool):
     name = "count"
     description = "Count executions."
     permission_scope = "read"
-    parameters = {"type": "object", "properties": {"value": {"type": "integer"}}}
+    parameters: ClassVar[dict[str, Any]] = {
+        "type": "object",
+        "properties": {"value": {"type": "integer"}},
+    }
 
     def __init__(self) -> None:
         self.calls = 0

@@ -9,8 +9,9 @@ state-machine permissions.
 from __future__ import annotations
 
 import inspect
+from collections.abc import Awaitable, Callable, Mapping
 from enum import Enum
-from typing import Any, Awaitable, Callable, Mapping
+from typing import Any
 
 from nano_vibe.tools.base import ToolError
 
@@ -20,7 +21,7 @@ class PermissionMode(str, Enum):
     FULL_ACCESS = "full-access"
 
     @classmethod
-    def parse(cls, value: "PermissionMode | str") -> "PermissionMode":
+    def parse(cls, value: PermissionMode | str) -> PermissionMode:
         if isinstance(value, cls):
             return value
         try:
@@ -29,7 +30,7 @@ class PermissionMode(str, Enum):
             raise ValueError("permission mode must be 'normal' or 'full-access'") from exc
 
 
-ApprovalCallback = Callable[[str, Mapping[str, Any]], bool | Awaitable[bool]]
+ApprovalCallback = Callable[[str, Any], bool | Awaitable[bool]]
 
 
 class PermissionPolicy:
@@ -65,7 +66,7 @@ class PermissionPolicy:
             approved = self.approve(tool_name, arguments)
             if inspect.isawaitable(approved):
                 approved = await approved
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - approval callbacks are user integrations
             return ToolError(
                 code="permission_approval_error",
                 message=str(exc) or "permission approval failed",

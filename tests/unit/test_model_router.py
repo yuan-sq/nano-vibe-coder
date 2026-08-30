@@ -1,4 +1,5 @@
-from typing import Any, Mapping, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any, cast
 
 import pytest
 
@@ -32,8 +33,8 @@ def test_router_uses_state_route_then_active_model_as_default() -> None:
         state_models={"PLAN": "planner"},
     )
 
-    assert router.route(AgentState.PLAN).name == "planner"
-    assert router.route(AgentState.VERIFY).name == "default"
+    assert cast(RecordingModel, router.route(AgentState.PLAN)).name == "planner"
+    assert cast(RecordingModel, router.route(AgentState.VERIFY)).name == "default"
     assert router.candidate_names(AgentState.PLAN) == ["planner", "default"]
 
 

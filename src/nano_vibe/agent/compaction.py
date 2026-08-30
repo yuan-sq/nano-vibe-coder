@@ -8,7 +8,7 @@ from typing import Any, Protocol
 
 
 class Tokenizer(Protocol):
-    def count(self, messages: Sequence[dict[str, Any]]) -> int: ...
+    def count(self, messages: Any) -> int: ...
 
 
 class ApproximateTokenizer:

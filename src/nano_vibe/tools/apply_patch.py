@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from .base import Tool, ToolResult
 
@@ -14,7 +14,7 @@ class ApplyPatchTool(Tool):
     name = "apply_patch"
     description = "Validate and apply a unified diff in the target Git repository."
     permission_scope = "write"
-    parameters = {
+    parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {"diff": {"type": "string"}},
         "required": ["diff"],

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from .base import Tool, ToolResult
 
@@ -90,7 +90,7 @@ class WebSearchTool(Tool):
     name = "web_search"
     description = "Search the web with Tavily using basic search and at most five results."
     permission_scope = "network"
-    parameters = {
+    parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {"query": {"type": "string"}},
         "required": ["query"],
@@ -119,9 +119,10 @@ class WebSearchTool(Tool):
         client, error = self._tavily._client_or_error()
         if error is not None:
             return error
+        assert client is not None
         try:
             data = await client.search(query=query, search_depth="basic", max_results=5)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - normalize provider failures
             return ToolResult.failure(
                 str(exc) or exc.__class__.__name__,
                 code="tavily_search_failed",

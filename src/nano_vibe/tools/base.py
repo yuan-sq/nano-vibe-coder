@@ -7,9 +7,10 @@ exception string produced by a particular Python implementation.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import json
-from typing import Any, Mapping
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from typing import Any, ClassVar
 
 
 @dataclass(frozen=True)
@@ -36,7 +37,7 @@ class ToolError:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "ToolError":
+    def from_dict(cls, value: Mapping[str, Any]) -> ToolError:
         details = value.get("details", {})
         return cls(
             code=str(value.get("code", "tool_error")),
@@ -54,7 +55,7 @@ class ToolResult:
     error: ToolError | None = None
 
     @classmethod
-    def success(cls, output: str, **metadata: Any) -> "ToolResult":
+    def success(cls, output: str, **metadata: Any) -> ToolResult:
         return cls(ok=True, output=output, metadata=metadata)
 
     @classmethod
@@ -67,7 +68,7 @@ class ToolResult:
         details: Mapping[str, Any] | None = None,
         retryable: bool = False,
         **metadata: Any,
-    ) -> "ToolResult":
+    ) -> ToolResult:
         if isinstance(output, ToolError):
             error = output
             message = output.message
@@ -90,7 +91,7 @@ class ToolResult:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "ToolResult":
+    def from_dict(cls, value: Mapping[str, Any]) -> ToolResult:
         raw_error = value.get("error")
         error = ToolError.from_dict(raw_error) if isinstance(raw_error, Mapping) else None
         return cls(
@@ -111,10 +112,10 @@ class ToolResult:
 class Tool:
     """Small interface for a model-callable local tool."""
 
-    name: str
-    description: str
-    parameters: Mapping[str, Any]
-    permission_scope = "read"
+    name: ClassVar[str]
+    description: ClassVar[str]
+    parameters: ClassVar[Mapping[str, Any]]
+    permission_scope: ClassVar[str] = "read"
 
     @property
     def definition(self) -> dict[str, Any]:

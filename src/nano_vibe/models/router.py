@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 from .base import Model, ModelResponse
 
@@ -105,7 +106,7 @@ class ModelRouter:
         for candidate in self.candidates(state_name):
             try:
                 return await candidate.model.complete(messages, tools)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - provider boundary requires fallback
                 message = str(exc) or exc.__class__.__name__
                 attempts.append((candidate.name, message))
         raise ModelRoutingError(state_name, attempts)

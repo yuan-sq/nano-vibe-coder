@@ -6,11 +6,11 @@ import json
 import os
 import re
 import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping
-
+from typing import Any
 
 CURRENT_SNAPSHOT_VERSION = 1
 _SESSION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
@@ -62,7 +62,7 @@ class SessionSnapshot:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "SessionSnapshot":
+    def from_dict(cls, value: Mapping[str, Any]) -> SessionSnapshot:
         version = value.get("version", CURRENT_SNAPSHOT_VERSION)
         if version != CURRENT_SNAPSHOT_VERSION:
             raise SessionStoreError(f"unsupported session snapshot version: {version}")

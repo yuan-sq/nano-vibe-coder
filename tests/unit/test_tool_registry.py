@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 import pytest
 
 from nano_vibe.tools.base import Tool, ToolResult
@@ -7,7 +9,7 @@ from nano_vibe.tools.registry import ToolRegistry, ToolUnavailable
 class EchoTool(Tool):
     name = "echo"
     description = "Echo a value."
-    parameters = {
+    parameters: ClassVar[dict[str, object]] = {
         "type": "object",
         "properties": {"value": {"type": "string"}},
         "required": ["value"],

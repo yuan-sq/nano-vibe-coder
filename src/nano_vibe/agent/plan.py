@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Iterable, Mapping
+from typing import Any
 
 
 class TodoStatus(str, Enum):
@@ -23,11 +24,11 @@ class PlanItem:
         return {"id": self.id, "content": self.content, "status": self.status.value}
 
     @classmethod
-    def from_value(cls, value: "PlanItem | Mapping[str, Any]") -> "PlanItem":
+    def from_value(cls, value: PlanItem | Mapping[str, Any]) -> PlanItem:
         if isinstance(value, cls):
             return value
         if not isinstance(value, Mapping):
-            raise ValueError("each plan item must be an object")
+            raise ValueError("each plan item must be an object")  # noqa: TRY004
         item_id = value.get("id")
         content = value.get("content", value.get("title"))
         status = value.get("status", TodoStatus.PENDING.value)
@@ -36,7 +37,7 @@ class PlanItem:
         if not isinstance(content, str) or not content.strip():
             raise ValueError("plan item content must be a non-empty string")
         if not isinstance(status, str):
-            raise ValueError(
+            raise ValueError(  # noqa: TRY004
                 "plan item status must be pending, in_progress, or completed"
             )
         try:
@@ -72,6 +73,10 @@ class PlanTodoList:
             item.status is TodoStatus.COMPLETED for item in self._items
         )
 
+    @property
+    def is_complete(self) -> bool:
+        return self.all_completed
+
     def replace(self, items: Iterable[PlanItem | Mapping[str, Any]]) -> tuple[PlanItem, ...]:
         candidate = [PlanItem.from_value(item) for item in items]
         ids = [item.id for item in candidate]
@@ -83,6 +88,8 @@ class PlanTodoList:
         self._items = candidate
         return self.items
 
+    update = replace
+
     def to_list(self) -> list[dict[str, str]]:
         return [item.to_dict() for item in self._items]
 
@@ -90,7 +97,7 @@ class PlanTodoList:
         return self.replace(items)
 
     @classmethod
-    def from_value(cls, value: Iterable[PlanItem | Mapping[str, Any]]) -> "PlanTodoList":
+    def from_value(cls, value: Iterable[PlanItem | Mapping[str, Any]]) -> PlanTodoList:
         return cls(value)
 
 

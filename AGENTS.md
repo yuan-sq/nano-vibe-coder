@@ -125,4 +125,17 @@
 
 commit 信息用中文
 
+## V2 项目运行约定
+
+本项目使用 Python 3.10+ 和 uv。安装依赖用 `uv sync`；提交前运行
+`uv run pytest -q`、`uv run ruff check src tests`、`uv run pyright`，并检查
+`git diff --check`。默认离线测试不得访问网络；Tavily live 测试必须显式设置
+`NANO_VIBE_LIVE_TAVILY=1`。
+
+Agent 状态为 REQUIREMENTS、PLAN、IMPLEMENT、VERIFY、DONE。Plan Todo 只允许
+`pending`、`in_progress`、`completed`，同一计划最多一个进行中，且 VERIFY
+到 DONE 前必须全部完成。normal/full-access 是应用层审批策略，不是 OS 沙箱。
+技能遵循 Codex `SKILL.md` 格式并只读加载；会话快照必须通过明确的
+`--resume SESSION_ID` 恢复。不要实现 Goal、评测框架、TUI/GUI 或 Tavily
+Crawl/Map/Research。
 

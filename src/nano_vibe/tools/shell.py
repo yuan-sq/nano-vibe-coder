@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from .base import Tool, ToolResult
 
@@ -14,7 +14,7 @@ class ShellTool(Tool):
     name = "shell"
     description = "Run a shell command in the target repository."
     permission_scope = "shell"
-    parameters = {
+    parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {"command": {"type": "string"}},
         "required": ["command"],

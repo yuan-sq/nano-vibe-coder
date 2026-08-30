@@ -1,7 +1,8 @@
 import subprocess
+from collections.abc import Mapping, Sequence
 from itertools import count
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import pytest
 
@@ -12,8 +13,8 @@ from nano_vibe.tools.apply_patch import ApplyPatchTool
 from nano_vibe.tools.registry import ToolRegistry
 from nano_vibe.tools.shell import ShellTool
 from nano_vibe.tools.transition import TransitionTool
-from nano_vibe.tools.update_plan import UpdatePlanTool
 from nano_vibe.tools.update_agents import UpdateAgentsTool
+from nano_vibe.tools.update_plan import UpdatePlanTool
 
 
 class ScriptedModel:

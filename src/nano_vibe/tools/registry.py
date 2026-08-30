@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Iterable, Mapping
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 from nano_vibe.permissions import PermissionPolicy
 
-from .base import Tool, ToolError, ToolResult
+from .base import Tool, ToolResult
 
 
 class ToolUnavailable(LookupError):
@@ -80,7 +81,7 @@ class ToolRegistry:
                 return ToolResult.failure(permission_error)
         try:
             result = await tool.execute(tool_arguments)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - tool boundary is normalized below
             result = ToolResult.failure(
                 str(exc) or exc.__class__.__name__,
                 code="tool_exception",

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 from nano_vibe.agent.state import AgentState, StateMachine
 
@@ -13,7 +13,7 @@ class UpdatePlanTool(Tool):
     name = "update_plan"
     description = "Replace the structured plan with pending, in_progress, or completed todo items."
     permission_scope = "plan"
-    parameters = {
+    parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "items": {
@@ -51,7 +51,7 @@ class UpdatePlanTool(Tool):
                 code="plan_state_forbidden",
                 details={"state": self.machine.current.value},
             )
-        items = arguments.get("items")
+        items = arguments.get("items", arguments.get("todos", arguments.get("plan")))
         if not isinstance(items, list):
             return ToolResult.failure(
                 "items must be a list of plan objects", code="invalid_plan"

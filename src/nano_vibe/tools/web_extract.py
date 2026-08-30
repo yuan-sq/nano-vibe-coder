@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 from urllib.parse import urlparse
 
 from .base import Tool, ToolResult
 from .web_search import _TavilyTool
-
 
 MAX_URLS = 5
 MAX_OUTPUT_CHARS = 30_000
@@ -19,7 +18,7 @@ class WebExtractTool(Tool):
     name = "web_extract"
     description = "Extract content from up to five URLs with a 30000-character output limit."
     permission_scope = "network"
-    parameters = {
+    parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
             "urls": {"type": "array", "items": {"type": "string"}},
@@ -58,9 +57,10 @@ class WebExtractTool(Tool):
         client, error = self._tavily._client_or_error()
         if error is not None:
             return error
+        assert client is not None
         try:
             data = await client.extract(urls=urls)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - normalize provider failures
             return ToolResult.failure(
                 str(exc) or exc.__class__.__name__,
                 code="tavily_extract_failed",

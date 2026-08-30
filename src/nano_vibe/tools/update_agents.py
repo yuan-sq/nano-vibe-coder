@@ -6,7 +6,7 @@ import asyncio
 import os
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from nano_vibe.agent.state import AgentState, InvalidTransition, StateMachine
 
@@ -17,7 +17,7 @@ class UpdateAgentsTool(Tool):
     name = "update_agents"
     description = "Review and write the complete AGENTS.md for the target repository."
     permission_scope = "write"
-    parameters = {
+    parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {"content": {"type": "string"}},
         "required": ["content"],

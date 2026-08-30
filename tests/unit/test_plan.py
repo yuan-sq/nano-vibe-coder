@@ -1,7 +1,7 @@
 import pytest
 
 from nano_vibe.agent.plan import PlanTodoList, TodoStatus
-from nano_vibe.agent.state import AgentState, StateMachine, InvalidTransition
+from nano_vibe.agent.state import AgentState, InvalidTransition, StateMachine
 from nano_vibe.tools.update_plan import UpdatePlanTool
 
 

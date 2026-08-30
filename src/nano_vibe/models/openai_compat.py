@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 from collections import defaultdict
-from collections.abc import Iterable, Mapping, Sequence
-from typing import Any, Callable
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from typing import Any
 
 from openai import AsyncOpenAI
 
@@ -68,7 +68,7 @@ def assemble_stream(chunks: Iterable[Any]) -> ModelResponse:
         try:
             arguments = json.loads(raw_arguments)
             if not isinstance(arguments, dict):
-                raise ValueError("tool arguments must be a JSON object")
+                raise ValueError("tool arguments must be a JSON object")  # noqa: TRY004
             parse_error = None
         except (TypeError, ValueError) as exc:
             arguments = {}
@@ -106,7 +106,7 @@ class OpenAICompatibleModel:
         for attempt in range(self.retries):
             try:
                 return await self._complete_once(messages, tools)
-            except Exception as exc:  # provider errors are intentionally retried
+            except Exception as exc:  # noqa: BLE001 - provider errors are intentionally retried
                 last_error = exc
                 if attempt + 1 < self.retries:
                     await asyncio.sleep(min(2**attempt, 8))

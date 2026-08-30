@@ -5,7 +5,9 @@ __pycache__/
 .ruff_cache/
 *.py[cod]
 config.toml
+.env
 runs/
+.nano-vibe/
 dist/
 build/
 *.egg-info/

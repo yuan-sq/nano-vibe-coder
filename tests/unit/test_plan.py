@@ -62,6 +62,39 @@ async def test_update_plan_tool_updates_structured_plan() -> None:
     assert result.metadata["plan"][1]["id"] == "test"
 
 
+@pytest.mark.asyncio
+async def test_update_plan_tool_supports_partial_incremental_updates() -> None:
+    machine = StateMachine()
+    machine.transition(AgentState.PLAN)
+    machine.plan.replace(
+        [
+            {"id": "inspect", "content": "Inspect code", "status": "in_progress"},
+            {"id": "test", "content": "Run tests", "status": "pending"},
+        ]
+    )
+
+    result = await UpdatePlanTool(machine).execute(
+        {"updates": [{"id": "inspect", "status": "completed"}]}
+    )
+
+    assert result.ok is True
+    assert machine.plan.items[0].content == "Inspect code"
+    assert machine.plan.items[0].status is TodoStatus.COMPLETED
+    assert machine.plan.items[1].status is TodoStatus.PENDING
+
+
+def test_incremental_plan_updates_reject_duplicate_ids() -> None:
+    plan = PlanTodoList([{"id": "one", "content": "One", "status": "pending"}])
+
+    with pytest.raises(ValueError, match="unique"):
+        plan.update(
+            [
+                {"id": "one", "status": "in_progress"},
+                {"id": "one", "status": "completed"},
+            ]
+        )
+
+
 def test_done_requires_all_plan_items_completed() -> None:
     machine = in_verify()
     machine.plan.replace([{"id": "verify", "content": "Run tests", "status": "pending"}])

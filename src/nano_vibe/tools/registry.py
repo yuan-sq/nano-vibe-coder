@@ -108,6 +108,9 @@ class ToolRegistry:
     def restore_idempotency(self, records: Mapping[str, Mapping[str, Any]]) -> None:
         self._idempotency = {str(key): dict(value) for key, value in records.items()}
 
+    def clear_idempotency(self) -> None:
+        self._idempotency.clear()
+
 
 def _string_key(value: Any) -> str | None:
     if value is None:

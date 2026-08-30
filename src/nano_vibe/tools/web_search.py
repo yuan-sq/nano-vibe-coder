@@ -129,5 +129,7 @@ class WebSearchTool(Tool):
                 details={"operation": "search"},
                 retryable=True,
             )
+        if isinstance(data, dict) and isinstance(data.get("results"), list):
+            data = {**data, "results": data["results"][:5]}
         output = json.dumps(data, ensure_ascii=False, default=str)
         return ToolResult.success(output, provider="tavily", search_depth="basic", max_results=5)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -52,6 +53,7 @@ class AgentLoop:
         tokenizer: Tokenizer | None = None,
         on_tool: Callable[[str, dict[str, Any]], None] | None = None,
         skill_manager: SkillManager | None = None,
+        on_checkpoint: Callable[[], Any] | None = None,
     ) -> None:
         self.model = model
         self.router = model if isinstance(model, ModelRouter) else None
@@ -67,6 +69,7 @@ class AgentLoop:
         self._tool_errors = 0
         self.on_tool = on_tool
         self.skill_manager = skill_manager
+        self.on_checkpoint = on_checkpoint
         self.compactor = ContextCompactor(
             tokenizer or ApproximateTokenizer(),
             context_window=context_window,
@@ -81,8 +84,10 @@ class AgentLoop:
             self.machine.reset_for_task()
             self._turns = 0
             self._tool_errors = 0
+            self.registry.clear_idempotency()
         self.history.append({"role": "user", "content": user_text})
         self._trace("user_input", content=user_text, state=self.machine.current.value)
+        await self._checkpoint()
         return await self._run_until_pause()
 
     async def _run_until_pause(self) -> LoopResult:
@@ -132,6 +137,7 @@ class AgentLoop:
                         **({"tool_error": result.error.to_dict()} if result.error else {}),
                     }
                 )
+                await self._checkpoint()
                 if not result.ok:
                     self._tool_errors += 1
                     if self._tool_errors >= self.max_consecutive_tool_errors:
@@ -257,7 +263,16 @@ class AgentLoop:
             self._trace(
                 "model_selected",
                 state=self.machine.current.value,
-                model=self.router.candidate_names(self.machine.current)[0],
+                model=self.router.last_selected
+                or self.router.candidate_names(self.machine.current)[0],
+                fallback_attempts=list(self.router.last_attempts),
             )
             return response
         return await self.model.complete(messages, tools)  # type: ignore[union-attr]
+
+    async def _checkpoint(self) -> None:
+        if self.on_checkpoint is None:
+            return
+        result = self.on_checkpoint()
+        if inspect.isawaitable(result):
+            await result

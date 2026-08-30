@@ -27,12 +27,18 @@ class ApplyPatchTool(Tool):
     async def execute(self, arguments: dict[str, Any]) -> ToolResult:
         diff = arguments.get("diff")
         if not isinstance(diff, str) or not diff.strip():
-            return ToolResult.failure("patch diff must be a non-empty string", checked=False)
+            return ToolResult.failure(
+                "patch diff must be a non-empty string",
+                code="invalid_patch",
+                checked=False,
+            )
 
         check = await asyncio.to_thread(self._run_git_apply, diff, check=True)
         if check.returncode != 0:
             return ToolResult.failure(
                 _command_output(check),
+                code="patch_check_failed",
+                details={"exit_code": check.returncode},
                 checked=False,
                 exit_code=check.returncode,
             )
@@ -41,6 +47,8 @@ class ApplyPatchTool(Tool):
         if applied.returncode != 0:
             return ToolResult.failure(
                 _command_output(applied),
+                code="patch_apply_failed",
+                details={"exit_code": applied.returncode},
                 checked=True,
                 exit_code=applied.returncode,
             )

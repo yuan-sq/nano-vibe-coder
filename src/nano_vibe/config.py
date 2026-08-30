@@ -26,6 +26,8 @@ class ModelConfig:
     description: str = ""
     context_window: int = 128_000
     api_key: str = field(default="", repr=False)
+    states: tuple[str, ...] = ()
+    fallbacks: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -51,6 +53,9 @@ class AppConfig:
     state_fallbacks: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     tavily: TavilyConfig = field(default_factory=lambda: TavilyConfig())
     skill_roots: tuple[str, ...] = ()
+
+    def model_for_state(self, state: str) -> ModelConfig:
+        return self.state_models.get(state.upper(), self.active_model)
 
 
 @dataclass(frozen=True)
@@ -92,6 +97,11 @@ def _model_from_values(name: str, values: Mapping[str, Any]) -> ModelConfig:
         raise ConfigError(f"{section}.description must be a string")
 
     context_window = _positive_int(values, "context_window", 128_000, section)
+    states = _string_list(values.get("states", []), f"{section}.states")
+    fallbacks = _string_list(
+        values.get("fallbacks", values.get("fallback_models", [])),
+        f"{section}.fallbacks",
+    )
     return ModelConfig(
         name=_required_string(values, "name", section),
         url=_required_string(values, "url", section),
@@ -100,6 +110,8 @@ def _model_from_values(name: str, values: Mapping[str, Any]) -> ModelConfig:
         description=description,
         context_window=context_window,
         api_key=api_key,
+        states=tuple(state.upper() for state in states),
+        fallbacks=fallbacks,
     )
 
 
@@ -144,7 +156,9 @@ def _runtime_from_values(values: Mapping[str, Any]) -> RuntimeConfig:
 def _string_list(value: Any, key: str, *, allow_empty: bool = True) -> tuple[str, ...]:
     if value is None:
         return ()
-    if not isinstance(value, list) or (not allow_empty and not value):
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, (list, tuple)) or (not allow_empty and not value):
         raise ConfigError(f"{key} must be a list of strings")
     if not all(isinstance(item, str) and item.strip() for item in value):
         raise ConfigError(f"{key} must be a list of strings")
@@ -193,6 +207,12 @@ def load_config(path: str | Path) -> AppConfig:
         if not isinstance(name, str) or not isinstance(values, Mapping):
             raise ConfigError("each models entry must be a table")
         models[name] = _model_from_values(name, values)
+    for model_key, model_config in models.items():
+        for model_name in model_config.fallbacks:
+            if model_name not in models:
+                raise ConfigError(
+                    f"fallback model '{model_name}' in models.{model_key} is not defined"
+                )
     if active_name not in models:
         raise ConfigError(f"active_model '{active_name}' is not defined in models")
 
@@ -217,6 +237,9 @@ def load_config(path: str | Path) -> AppConfig:
     state_names: dict[str, Any] = {}
     state_names.update(dict(raw_state_models))
     state_names.update(dict(nested_states))
+    for model_key, model_config in models.items():
+        for state in model_config.states:
+            state_names.setdefault(state.upper(), model_key)
     for name, value in raw_routing.items():
         if str(name).upper() in {"REQUIREMENTS", "PLAN", "IMPLEMENT", "VERIFY", "DONE"}:
             state_names[str(name).upper()] = value
@@ -228,7 +251,10 @@ def load_config(path: str | Path) -> AppConfig:
             raise ConfigError(f"state model '{model_name}' is not defined in models")
         state_models[state.upper()] = models[model_name]
 
-    fallback_value = raw.get("fallback_models", raw_routing.get("fallback", []))
+    fallback_value = raw.get(
+        "fallback_models",
+        raw_routing.get("fallback", models[active_name].fallbacks),
+    )
     fallback_models = _string_list(fallback_value, "fallback_models")
     for model_name in fallback_models:
         if model_name not in models:
@@ -247,6 +273,10 @@ def load_config(path: str | Path) -> AppConfig:
             if model_name not in models:
                 raise ConfigError(f"fallback model '{model_name}' is not defined in models")
         state_fallbacks[state.upper()] = names
+    for model_key, model_config in models.items():
+        if model_config.fallbacks:
+            for state in model_config.states:
+                state_fallbacks.setdefault(state.upper(), model_config.fallbacks)
 
     raw_tavily = raw.get("tavily", {})
     if not isinstance(raw_tavily, Mapping):

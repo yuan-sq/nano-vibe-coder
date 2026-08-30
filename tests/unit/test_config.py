@@ -113,3 +113,29 @@ def test_load_config_rejects_unknown_permission_mode(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigError, match="permission_mode"):
         load_config(path)
+
+
+def test_load_config_accepts_model_state_and_fallback_metadata(tmp_path: Path) -> None:
+    path = write_config(
+        tmp_path,
+        """
+        active_model = "default"
+        [models.default]
+        name = "default"
+        url = "https://example.test/v1"
+        model_name = "demo"
+        states = ["REQUIREMENTS"]
+        fallbacks = ["backup"]
+        [models.backup]
+        name = "backup"
+        url = "https://backup.test/v1"
+        model_name = "backup-demo"
+        """,
+    )
+
+    config = load_config(path)
+
+    assert config.models["default"].states == ("REQUIREMENTS",)
+    assert config.models["default"].fallbacks == ("backup",)
+    assert config.state_models["REQUIREMENTS"].name == "default"
+    assert config.fallback_models == ("backup",)

@@ -45,3 +45,16 @@ async def test_registry_rejects_reused_key_with_different_arguments() -> None:
     assert result.ok is False
     assert result.error is not None
     assert result.error.code == "idempotency_conflict"
+
+
+@pytest.mark.asyncio
+async def test_registry_can_clear_idempotency_between_tasks() -> None:
+    tool = CountingTool()
+    registry = ToolRegistry([tool])
+    await registry.execute("count", {"value": 1}, idempotency_key="call-1")
+
+    registry.clear_idempotency()
+    result = await registry.execute("count", {"value": 2}, idempotency_key="call-1")
+
+    assert result.ok is True
+    assert tool.calls == 2

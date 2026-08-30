@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +15,12 @@ class FakeTavilyClient:
 
     async def search(self, **kwargs: Any) -> dict[str, Any]:
         self.search_calls.append(kwargs)
-        return {"results": [{"title": "Result", "url": "https://example.test"}]}
+        return {
+            "results": [
+                {"title": f"Result {index}", "url": f"https://example.test/{index}"}
+                for index in range(7)
+            ]
+        }
 
     async def extract(self, **kwargs: Any) -> dict[str, Any]:
         self.extract_calls.append(kwargs)
@@ -39,6 +45,7 @@ async def test_web_search_uses_tavily_basic_depth_and_five_results(tmp_path: Pat
         {"query": "python", "search_depth": "basic", "max_results": 5}
     ]
     assert result.metadata["provider"] == "tavily"
+    assert len(json.loads(result.output)["results"]) == 5
 
 
 @pytest.mark.asyncio

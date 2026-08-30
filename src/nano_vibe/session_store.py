@@ -14,6 +14,7 @@ from typing import Any
 
 CURRENT_SNAPSHOT_VERSION = 1
 _SESSION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
+_SENSITIVE_KEYS = {"api_key", "access_token", "authorization", "password", "secret"}
 
 
 class SessionStoreError(ValueError):
@@ -22,6 +23,22 @@ class SessionStoreError(ValueError):
 
 def _timestamp() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _snapshot_int(value: Any, field_name: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise SessionStoreError(f"session snapshot {field_name} must be a non-negative integer")
+    return value
+
+
+def _redact_value(key: str, value: Any) -> Any:
+    if key.lower() in _SENSITIVE_KEYS:
+        return "[REDACTED]"
+    if isinstance(value, Mapping):
+        return {str(child_key): _redact_value(str(child_key), child_value) for child_key, child_value in value.items()}
+    if isinstance(value, list):
+        return [_redact_value(key, item) for item in value]
+    return value
 
 
 @dataclass
@@ -49,13 +66,14 @@ class SessionSnapshot:
             "permission_mode": self.permission_mode,
             "state": self.state,
             "agents_updated": self.agents_updated,
-            "plan": [dict(item) for item in self.plan],
-            "history": [dict(message) for message in self.history],
+            "plan": [_redact_value("plan", dict(item)) for item in self.plan],
+            "history": [_redact_value("history", dict(message)) for message in self.history],
             "summary": self.summary,
             "turns": self.turns,
             "tool_errors": self.tool_errors,
             "idempotency_records": {
-                str(key): dict(value) for key, value in self.idempotency_records.items()
+                str(key): _redact_value("record", dict(value))
+                for key, value in self.idempotency_records.items()
             },
             "loaded_skills": list(self.loaded_skills),
             "updated_at": self.updated_at,
@@ -78,22 +96,34 @@ class SessionSnapshot:
         history = value.get("history", [])
         records = value.get("idempotency_records", {})
         loaded_skills = value.get("loaded_skills", [])
+        agents_updated = value.get("agents_updated", False)
+        summary = value.get("summary")
         if not isinstance(plan, list) or not isinstance(history, list):
             raise SessionStoreError("session snapshot plan and history must be arrays")
         if not isinstance(records, Mapping) or not isinstance(loaded_skills, list):
             raise SessionStoreError("session snapshot has invalid persisted records")
+        if not isinstance(agents_updated, bool):
+            raise SessionStoreError("session snapshot agents_updated must be boolean")
+        if summary is not None and not isinstance(summary, str):
+            raise SessionStoreError("session snapshot summary must be a string or null")
+        if any(not isinstance(item, Mapping) for item in plan + history):
+            raise SessionStoreError("session snapshot plan and history items must be objects")
+        if any(not isinstance(item, str) for item in loaded_skills):
+            raise SessionStoreError("session snapshot loaded_skills must contain strings")
+        if any(not isinstance(item, Mapping) for item in records.values()):
+            raise SessionStoreError("session snapshot idempotency records must be objects")
         return cls(
             version=version,
             session_id=session_id,
             workspace=workspace,
             permission_mode=permission_mode,
             state=state,
-            agents_updated=bool(value.get("agents_updated", False)),
+            agents_updated=agents_updated,
             plan=[dict(item) for item in plan if isinstance(item, Mapping)],
             history=[dict(item) for item in history if isinstance(item, Mapping)],
-            summary=value.get("summary") if isinstance(value.get("summary"), str) else None,
-            turns=int(value.get("turns", 0)),
-            tool_errors=int(value.get("tool_errors", 0)),
+            summary=summary,
+            turns=_snapshot_int(value.get("turns", 0), "turns"),
+            tool_errors=_snapshot_int(value.get("tool_errors", 0), "tool_errors"),
             idempotency_records={
                 str(key): dict(item)
                 for key, item in records.items()
@@ -147,6 +177,8 @@ class SessionStore:
             raise
         return target
 
+    save_session = save
+
     def load(self, session_id: str) -> SessionSnapshot:
         path = self.path_for(session_id)
         if not path.is_file():
@@ -163,6 +195,8 @@ class SessionStore:
         if snapshot.session_id != session_id:
             raise SessionStoreError("session id does not match snapshot filename")
         return snapshot
+
+    load_session = load
 
     def list_sessions(self) -> list[dict[str, Any]]:
         if not self.directory.is_dir():

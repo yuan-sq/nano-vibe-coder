@@ -31,9 +31,26 @@ class UpdatePlanTool(Tool):
                     "required": ["id", "content", "status"],
                     "additionalProperties": False,
                 },
-            }
+            },
+            "updates": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "content": {"type": "string"},
+                        "status": {
+                            "type": "string",
+                            "enum": ["pending", "in_progress", "completed"],
+                        },
+                    },
+                    "required": ["id"],
+                    "additionalProperties": False,
+                },
+            },
+            "replace": {"type": "boolean", "default": True},
         },
-        "required": ["items"],
+        "required": [],
         "additionalProperties": False,
     }
 
@@ -51,13 +68,20 @@ class UpdatePlanTool(Tool):
                 code="plan_state_forbidden",
                 details={"state": self.machine.current.value},
             )
-        items = arguments.get("items", arguments.get("todos", arguments.get("plan")))
+        incremental = "updates" in arguments
+        items = arguments.get(
+            "updates" if incremental else "items",
+            arguments.get("todos", arguments.get("plan")),
+        )
         if not isinstance(items, list):
             return ToolResult.failure(
                 "items must be a list of plan objects", code="invalid_plan"
             )
         try:
-            plan = self.machine.plan.replace(items)
+            if incremental or arguments.get("replace") is False:
+                plan = self.machine.plan.update(items)
+            else:
+                plan = self.machine.plan.replace(items)
         except ValueError as exc:
             return ToolResult.failure(str(exc), code="invalid_plan", retryable=False)
         return ToolResult.success(

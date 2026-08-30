@@ -59,6 +59,8 @@ class ModelRouter:
             )
             for state, values in (state_fallbacks or {}).items()
         }
+        self.last_selected: str | None = None
+        self.last_attempts: list[tuple[str, str]] = []
 
     def _resolve_name(self, value: str | Model, field: str) -> str:
         if isinstance(value, str):
@@ -103,10 +105,16 @@ class ModelRouter:
     ) -> ModelResponse:
         state_name = self._state_name(state)
         attempts: list[tuple[str, str]] = []
+        self.last_attempts = []
+        self.last_selected = None
         for candidate in self.candidates(state_name):
             try:
-                return await candidate.model.complete(messages, tools)
+                response = await candidate.model.complete(messages, tools)
+                self.last_attempts = attempts
+                self.last_selected = candidate.name
+                return response
             except Exception as exc:  # noqa: BLE001 - provider boundary requires fallback
                 message = str(exc) or exc.__class__.__name__
                 attempts.append((candidate.name, message))
+        self.last_attempts = attempts
         raise ModelRoutingError(state_name, attempts)

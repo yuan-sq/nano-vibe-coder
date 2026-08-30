@@ -41,6 +41,8 @@ async def test_apply_patch_does_not_modify_workspace_when_check_fails(tmp_path: 
 
     assert result.ok is False
     assert result.metadata["checked"] is False
+    assert result.error is not None
+    assert result.error.code == "patch_check_failed"
     assert (tmp_path / "hello.txt").read_text(encoding="utf-8") == "old\n"
 
 

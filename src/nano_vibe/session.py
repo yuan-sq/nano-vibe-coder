@@ -110,6 +110,7 @@ class Session:
             compact_target_ratio=compact_target_ratio,
             on_tool=on_tool,
             skill_manager=self.skill_manager,
+            on_checkpoint=self.save_snapshot,
         )
 
     async def handle_input(self, text: str) -> LoopResult:
@@ -137,6 +138,8 @@ class Session:
 
     def save_snapshot(self) -> Path:
         return self.session_store.save(self.snapshot())
+
+    save = save_snapshot
 
     def restore_snapshot(self, snapshot: SessionSnapshot) -> None:
         if snapshot.workspace and Path(snapshot.workspace).resolve() != self.workspace:

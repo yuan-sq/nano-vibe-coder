@@ -53,6 +53,8 @@ async def test_router_falls_back_after_primary_model_failure() -> None:
     assert response.content == "backup"
     assert primary.calls == 1
     assert backup.calls == 1
+    assert router.last_selected == "backup"
+    assert router.last_attempts == [("primary", "offline")]
 
 
 @pytest.mark.asyncio

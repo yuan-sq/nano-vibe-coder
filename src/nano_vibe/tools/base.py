@@ -54,6 +54,19 @@ class ToolResult:
     metadata: Mapping[str, Any] = field(default_factory=dict)
     error: ToolError | None = None
 
+    def __post_init__(self) -> None:
+        # Keep the in-band error contract even for older/custom tools that
+        # construct ``ToolResult(ok=False, ...)`` directly.
+        if not self.ok and self.error is None:
+            object.__setattr__(
+                self,
+                "error",
+                ToolError(
+                    code="tool_error",
+                    message=self.output.strip() or "tool failed",
+                ),
+            )
+
     @classmethod
     def success(cls, output: str, **metadata: Any) -> ToolResult:
         return cls(ok=True, output=output, metadata=metadata)

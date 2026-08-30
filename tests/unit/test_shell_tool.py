@@ -22,6 +22,8 @@ async def test_shell_returns_nonzero_exit_and_stderr(tmp_path: Path) -> None:
     assert result.ok is False
     assert "boom" in result.output
     assert result.metadata["exit_code"] == 7
+    assert result.error is not None
+    assert result.error.code == "shell_exit"
 
 
 @pytest.mark.asyncio
@@ -31,6 +33,8 @@ async def test_shell_marks_timeout(tmp_path: Path) -> None:
 
     assert result.ok is False
     assert result.metadata["timed_out"] is True
+    assert result.error is not None
+    assert result.error.code == "shell_timeout"
 
 
 @pytest.mark.asyncio

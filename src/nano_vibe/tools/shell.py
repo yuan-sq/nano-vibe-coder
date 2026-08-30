@@ -31,7 +31,11 @@ class ShellTool(Tool):
     async def execute(self, arguments: dict[str, Any]) -> ToolResult:
         command = arguments.get("command")
         if not isinstance(command, str) or not command.strip():
-            return ToolResult.failure("shell command must be a non-empty string", exit_code=None)
+            return ToolResult.failure(
+                "shell command must be a non-empty string",
+                code="invalid_shell_command",
+                exit_code=None,
+            )
 
         try:
             completed = await asyncio.to_thread(
@@ -47,15 +51,33 @@ class ShellTool(Tool):
             output = _combine_output(exc.stdout, exc.stderr)
             return ToolResult.failure(
                 _truncate(output, self.max_output_chars),
+                code="shell_timeout",
+                details={"timeout_seconds": self.timeout_seconds},
+                retryable=True,
                 exit_code=None,
                 timed_out=True,
             )
         except OSError as exc:
-            return ToolResult.failure(str(exc), exit_code=None, timed_out=False)
+            return ToolResult.failure(
+                str(exc),
+                code="shell_error",
+                details={"exception_type": exc.__class__.__name__},
+                retryable=True,
+                exit_code=None,
+                timed_out=False,
+            )
 
         output = _combine_output(completed.stdout, completed.stderr)
+        if completed.returncode != 0:
+            return ToolResult.failure(
+                _truncate(output, self.max_output_chars),
+                code="shell_exit",
+                details={"exit_code": completed.returncode},
+                exit_code=completed.returncode,
+                timed_out=False,
+            )
         return ToolResult(
-            ok=completed.returncode == 0,
+            ok=True,
             output=_truncate(output, self.max_output_chars),
             metadata={"exit_code": completed.returncode, "timed_out": False},
         )

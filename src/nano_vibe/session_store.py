@@ -55,6 +55,8 @@ class SessionSnapshot:
     tool_errors: int = 0
     idempotency_records: dict[str, dict[str, Any]] = field(default_factory=dict)
     loaded_skills: list[str] = field(default_factory=list)
+    runtime_state: str = "IDLE"
+    pending_interaction: dict[str, Any] | None = None
     updated_at: str = field(default_factory=_timestamp)
     version: int = CURRENT_SNAPSHOT_VERSION
 
@@ -76,6 +78,12 @@ class SessionSnapshot:
                 for key, value in self.idempotency_records.items()
             },
             "loaded_skills": list(self.loaded_skills),
+            "runtime_state": self.runtime_state,
+            "pending_interaction": (
+                _redact_value("pending_interaction", dict(self.pending_interaction))
+                if self.pending_interaction is not None
+                else None
+            ),
             "updated_at": self.updated_at,
         }
 
@@ -96,12 +104,18 @@ class SessionSnapshot:
         history = value.get("history", [])
         records = value.get("idempotency_records", {})
         loaded_skills = value.get("loaded_skills", [])
+        runtime_state = value.get("runtime_state", "IDLE")
+        pending_interaction = value.get("pending_interaction")
         agents_updated = value.get("agents_updated", False)
         summary = value.get("summary")
         if not isinstance(plan, list) or not isinstance(history, list):
             raise SessionStoreError("session snapshot plan and history must be arrays")
         if not isinstance(records, Mapping) or not isinstance(loaded_skills, list):
             raise SessionStoreError("session snapshot has invalid persisted records")
+        if not isinstance(runtime_state, str):
+            raise SessionStoreError("session snapshot runtime_state must be a string")
+        if pending_interaction is not None and not isinstance(pending_interaction, Mapping):
+            raise SessionStoreError("session snapshot pending_interaction must be an object or null")
         if not isinstance(agents_updated, bool):
             raise SessionStoreError("session snapshot agents_updated must be boolean")
         if summary is not None and not isinstance(summary, str):
@@ -130,6 +144,10 @@ class SessionSnapshot:
                 if isinstance(item, Mapping)
             },
             loaded_skills=[str(item) for item in loaded_skills if isinstance(item, str)],
+            runtime_state=runtime_state,
+            pending_interaction=(
+                dict(pending_interaction) if isinstance(pending_interaction, Mapping) else None
+            ),
             updated_at=str(value.get("updated_at", _timestamp())),
         )
 

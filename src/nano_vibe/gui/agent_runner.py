@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import uuid
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -18,6 +19,8 @@ class InteractionBroker:
 
     def __init__(self, emit: Callable[[str, dict[str, Any]], Awaitable[None]]) -> None:
         self.emit = emit
+        self.on_pending: Callable[[PendingInteraction], Any] | None = None
+        self.on_resolved: Callable[[PendingInteraction, str], Any] | None = None
         self.pending: dict[str, PendingInteraction] = {}
         self._futures: dict[str, asyncio.Future[str | bool]] = {}
 
@@ -51,6 +54,10 @@ class InteractionBroker:
         future: asyncio.Future[str | bool] = loop.create_future()
         self.pending[interaction.interaction_id] = interaction
         self._futures[interaction.interaction_id] = future
+        if self.on_pending is not None:
+            callback_result = self.on_pending(interaction)
+            if inspect.isawaitable(callback_result):
+                await callback_result
         await self.emit(
             "approval_requested" if interaction.kind == "approval" else "user_request",
             interaction.to_dict(),
@@ -67,6 +74,10 @@ class InteractionBroker:
         if future is None or interaction is None or future.done():
             return False
         future.set_result(decision if interaction.kind == "user_request" else decision in {"once", "session", "allow", "approved"})
+        if self.on_resolved is not None:
+            callback_result = self.on_resolved(interaction, decision)
+            if inspect.isawaitable(callback_result):
+                await callback_result
         await self.emit(
             "approval_resolved" if interaction.kind == "approval" else "user_request_resolved",
             {"interaction_id": interaction_id, "decision": decision},
@@ -108,11 +119,36 @@ class GuiAgentRunner:
         emit: Callable[[str, dict[str, Any]], Awaitable[None]],
         stop_event: asyncio.Event,
     ) -> None:
-        broker = InteractionBroker(emit)
-        self.brokers[session_id] = broker
         workspace = self.workspace_for_session(session_id)
+        holder: dict[str, Session] = {}
+
+        async def on_pending(interaction: PendingInteraction) -> None:
+            session = holder.get("session")
+            if session is None:
+                return
+            session.runtime_state = (
+                "AWAITING_APPROVAL" if interaction.kind == "approval" else "AWAITING_INPUT"
+            )
+            session.pending_interaction = interaction.to_dict()
+            session.save_snapshot()
+
+        async def on_resolved(interaction: PendingInteraction, _decision: str) -> None:
+            session = holder.get("session")
+            if session is None:
+                return
+            session.runtime_state = "RUNNING"
+            session.pending_interaction = None
+            session.save_snapshot()
+
+        broker = InteractionBroker(emit)
+        broker.on_pending = on_pending
+        broker.on_resolved = on_resolved
+        self.brokers[session_id] = broker
         ui = GuiUI(emit, broker)
         session = Session.from_config(self.config, workspace, ui, session_id=session_id)
+        holder["session"] = session
+        session.runtime_state = "RUNNING"
+        session.save_snapshot()
         agent_task = asyncio.create_task(session.handle_input(text))
         stop_task = asyncio.create_task(stop_event.wait())
         try:
@@ -122,9 +158,14 @@ class GuiAgentRunner:
             if stop_task in done and not agent_task.done():
                 agent_task.cancel()
                 await asyncio.gather(agent_task, return_exceptions=True)
+                session.runtime_state = "PAUSED"
+                session.save_snapshot()
                 await emit("runtime_state", {"state": "PAUSED"})
             else:
                 result = await agent_task
+                session.runtime_state = "IDLE"
+                session.pending_interaction = None
+                session.save_snapshot()
                 await emit("message_completed", {"content": result.message, "status": result.status.value})
         finally:
             stop_task.cancel()

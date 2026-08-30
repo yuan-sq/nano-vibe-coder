@@ -62,6 +62,8 @@ class Session:
         self.machine = machine or StateMachine()
         self.model = model
         self.trace = trace
+        self.runtime_state = "IDLE"
+        self.pending_interaction: dict[str, Any] | None = None
         self.permission_mode = PermissionMode.parse(permission_mode)
         self.session_store = session_store or SessionStore(self.workspace / ".nano-vibe" / "sessions")
         self.session_id = session_id or uuid.uuid4().hex[:12]
@@ -136,6 +138,8 @@ class Session:
             tool_errors=self.loop._tool_errors,
             idempotency_records=self.registry.idempotency_records,
             loaded_skills=self.skill_manager.loaded_names,
+            runtime_state=self.runtime_state,
+            pending_interaction=(dict(self.pending_interaction) if self.pending_interaction else None),
         )
 
     def save_snapshot(self) -> Path:
@@ -160,6 +164,10 @@ class Session:
         self.loop._tool_errors = snapshot.tool_errors
         self.registry.restore_idempotency(snapshot.idempotency_records)
         self.skill_manager.restore(snapshot.loaded_skills)
+        self.runtime_state = snapshot.runtime_state
+        self.pending_interaction = (
+            dict(snapshot.pending_interaction) if snapshot.pending_interaction is not None else None
+        )
 
     @classmethod
     def resume(

@@ -24,6 +24,8 @@ def test_session_store_round_trips_json_snapshot(tmp_path: Path) -> None:
         turns=2,
         tool_errors=0,
         idempotency_records={"shell:call-1": {"result": {"ok": True}}},
+        runtime_state="AWAITING_APPROVAL",
+        pending_interaction={"interaction_id": "a-1", "kind": "approval"},
     )
 
     path = store.save(snapshot)
@@ -33,6 +35,8 @@ def test_session_store_round_trips_json_snapshot(tmp_path: Path) -> None:
     assert loaded["version"] == CURRENT_SNAPSHOT_VERSION
     assert loaded["plan"][0]["status"] == "completed"
     assert loaded["history"] == snapshot.history
+    assert loaded.runtime_state == "AWAITING_APPROVAL"
+    assert loaded.pending_interaction == {"interaction_id": "a-1", "kind": "approval"}
 
 
 def test_session_snapshot_redacts_sensitive_mapping_keys() -> None:

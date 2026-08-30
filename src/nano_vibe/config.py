@@ -48,6 +48,7 @@ class AppConfig:
     state_models: Mapping[str, ModelConfig] = field(default_factory=dict)
     fallback_models: tuple[str, ...] = ()
     tavily: "TavilyConfig" = field(default_factory=lambda: TavilyConfig())
+    skill_roots: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -234,6 +235,12 @@ def load_config(path: str | Path) -> AppConfig:
     raw_tavily = raw.get("tavily", {})
     if not isinstance(raw_tavily, Mapping):
         raise ConfigError("tavily must be a table")
+    raw_skills = raw.get("skills", {})
+    if raw_skills is None:
+        raw_skills = {}
+    if not isinstance(raw_skills, Mapping):
+        raise ConfigError("skills must be a table")
+    skill_roots = _string_list(raw.get("skill_roots", raw_skills.get("roots", [])), "skill_roots")
     return AppConfig(
         active_model=models[active_name],
         models=models,
@@ -241,4 +248,5 @@ def load_config(path: str | Path) -> AppConfig:
         state_models=state_models,
         fallback_models=fallback_models,
         tavily=_tavily_from_values(raw_tavily),
+        skill_roots=skill_roots,
     )

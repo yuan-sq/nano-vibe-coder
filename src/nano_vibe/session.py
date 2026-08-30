@@ -26,6 +26,7 @@ from nano_vibe.tools.update_agents import UpdateAgentsTool
 from nano_vibe.tools.update_plan import UpdatePlanTool
 from nano_vibe.tools.user_request import UserRequestTool
 from nano_vibe.tools.web_search import WebSearchTool
+from nano_vibe.tools.web_extract import WebExtractTool
 from nano_vibe.tools.skills import LoadSkillTool, ReadSkillTool, UnloadSkillTool
 
 
@@ -54,6 +55,7 @@ class Session:
         on_tool: Any | None = None,
         shell_timeout_seconds: float = 300,
         shell_max_output_chars: int = 50_000,
+        tavily_env_file: str | Path = ".env",
     ) -> None:
         self.workspace = Path(workspace).resolve()
         self.machine = machine or StateMachine()
@@ -87,7 +89,8 @@ class Session:
                     LoadSkillTool(self.skill_manager),
                     ReadSkillTool(self.skill_manager),
                     UnloadSkillTool(self.skill_manager),
-                    WebSearchTool(),
+                    WebSearchTool(workspace=self.workspace, env_file=tavily_env_file),
+                    WebExtractTool(workspace=self.workspace, env_file=tavily_env_file),
                 ],
                 permission_policy=permission_policy,
             )
@@ -192,15 +195,35 @@ class Session:
         workspace_path = Path(workspace).resolve()
         project_root = Path(__file__).resolve().parents[2]
         workspace_id = hashlib.sha256(str(workspace_path).encode()).hexdigest()[:12]
-        session_id = uuid.uuid4().hex[:12]
+        session_id = session_id or uuid.uuid4().hex[:12]
         trace = TraceWriter(project_root / "runs" / workspace_id / f"{session_id}.jsonl", session_id)
-        model = OpenAICompatibleModel(
-            config.active_model,
-            retries=config.runtime.api_retries,
-            on_text=ui.write_stream,
+        model_instances = {
+            name: OpenAICompatibleModel(
+                model_config,
+                retries=config.runtime.api_retries,
+                on_text=ui.write_stream,
+            )
+            for name, model_config in config.models.items()
+        }
+
+        def config_key(model_config: Any) -> str:
+            for name, configured in config.models.items():
+                if configured is model_config or configured == model_config:
+                    return name
+            raise ValueError(f"model is not present in config: {model_config}")
+
+        active_key = config_key(config.active_model)
+        router = ModelRouter(
+            model_instances,
+            active_model=active_key,
+            state_models={
+                state: config_key(model_config)
+                for state, model_config in config.state_models.items()
+            },
+            fallback_models=config.fallback_models,
         )
         return cls(
-            model,
+            router,
             workspace_path,
             trace=trace,
             session_id=session_id,
@@ -211,6 +234,7 @@ class Session:
             ),
             permission_mode=config.runtime.permission_mode,
             permission_approve=getattr(ui, "approve", None),
+            skill_roots=config.skill_roots or None,
             max_model_turns=config.runtime.max_model_turns,
             max_consecutive_tool_errors=config.runtime.max_consecutive_tool_errors,
             context_window=config.active_model.context_window,
@@ -220,4 +244,5 @@ class Session:
             on_tool=ui.tool_start,
             shell_timeout_seconds=config.runtime.shell_timeout_seconds,
             shell_max_output_chars=config.runtime.shell_max_output_chars,
+            tavily_env_file=config.tavily.env_file,
         )

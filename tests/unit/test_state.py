@@ -48,6 +48,7 @@ def test_tool_permissions_depend_on_current_state() -> None:
         "user_request",
         "transition_state",
         "web_search",
+        "web_extract",
         "load_skill",
         "read_skill",
         "unload_skill",

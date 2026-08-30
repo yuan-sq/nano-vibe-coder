@@ -53,6 +53,7 @@ class Session:
         compact_target_ratio: float = 0.50,
         user_request_callback: Any | None = None,
         on_tool: Any | None = None,
+        on_event: Any | None = None,
         shell_timeout_seconds: float = 300,
         shell_max_output_chars: int = 50_000,
         tavily_env_file: str | Path = ".env",
@@ -109,6 +110,7 @@ class Session:
             compact_ratio=compact_ratio,
             compact_target_ratio=compact_target_ratio,
             on_tool=on_tool,
+            on_event=on_event,
             skill_manager=self.skill_manager,
             on_checkpoint=self.save_snapshot,
         )
@@ -247,6 +249,7 @@ class Session:
             compact_target_ratio=config.runtime.compact_target_ratio,
             user_request_callback=ui.ask,
             on_tool=ui.tool_start,
+            on_event=getattr(ui, "on_event", None),
             shell_timeout_seconds=config.runtime.shell_timeout_seconds,
             shell_max_output_chars=config.runtime.shell_max_output_chars,
             tavily_env_file=config.tavily.env_file,

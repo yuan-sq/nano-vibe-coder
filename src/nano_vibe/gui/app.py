@@ -17,6 +17,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from nano_vibe.config import AppConfig
+
+from .agent_runner import GuiAgentRunner
 from .diff import GitDiffService
 from .events import SessionEventBuffer
 from .runtime import GlobalRunLock, LockAcquisitionError
@@ -151,6 +154,13 @@ class TaskCoordinator:
             active.task.cancel()
         return True
 
+    async def resolve(self, session_id: str, interaction_id: str, decision: str) -> bool:
+        resolver = getattr(self.runner, "resolve", None)
+        if resolver is None:
+            return False
+        result = resolver(session_id, interaction_id, decision)
+        return bool(await result) if inspect.isawaitable(result) else bool(result)
+
     @staticmethod
     async def _unconfigured_runner(
         _session_id: str,
@@ -200,6 +210,7 @@ def create_app(
     storage: AppStorage | None = None,
     event_buffer: SessionEventBuffer | None = None,
     runner: Runner | None = None,
+    agent_config: AppConfig | None = None,
     require_auth: bool = True,
     startup_token: StartupToken | None = None,
     frontend_origin: str = "http://127.0.0.1:5173",
@@ -208,11 +219,19 @@ def create_app(
     app_storage = storage or AppStorage()
     buffer = event_buffer or SessionEventBuffer()
     hub = EventHub(buffer)
+    selected_runner = runner
+    if selected_runner is None and agent_config is not None:
+        selected_runner = GuiAgentRunner(
+            agent_config,
+            lambda session_id: Path(
+                app_storage.get_project(app_storage.get_session(session_id).project_id).path
+            ),
+        )
     state = GuiState(
         storage=app_storage,
         event_buffer=buffer,
         hub=hub,
-        coordinator=TaskCoordinator(app_storage, hub, runner),
+        coordinator=TaskCoordinator(app_storage, hub, selected_runner),
         startup_token=startup_token or StartupToken(),
         cookie_value=secrets.token_urlsafe(32),
         require_auth=require_auth,
@@ -392,6 +411,13 @@ def create_app(
                     await websocket.send_json(
                         {"type": "stop_result", "ok": await state.coordinator.stop(run_id)}
                     )
+                elif command_type in {"resolve_approval", "resolve_user_request"}:
+                    ok = await state.coordinator.resolve(
+                        session_id,
+                        str(command.get("interaction_id", "")),
+                        str(command.get("decision", "")),
+                    )
+                    await websocket.send_json({"type": "interaction_result", "ok": ok})
                 else:
                     await websocket.send_json(
                         {"type": "error", "code": "unknown_command", "message": str(command_type)}

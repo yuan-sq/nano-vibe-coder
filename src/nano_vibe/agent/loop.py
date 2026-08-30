@@ -152,7 +152,10 @@ class AgentLoop:
         else:
             try:
                 result = await self.registry.execute(
-                    call.name, call.arguments, self.machine.allowed_tools()
+                    call.name,
+                    call.arguments,
+                    self.machine.allowed_tools(),
+                    idempotency_key=call.id or None,
                 )
             except Exception as exc:
                 result = ToolResult.failure(str(exc))

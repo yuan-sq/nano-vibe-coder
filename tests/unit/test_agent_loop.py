@@ -143,3 +143,25 @@ async def test_agent_loop_uses_model_route_for_current_state(tmp_path: Path) -> 
     assert result.message == "planner response"
     assert len(planner.requests) == 1
     assert len(default.requests) == 0
+
+
+@pytest.mark.asyncio
+async def test_agent_loop_replays_same_tool_call_id_without_second_side_effect(tmp_path: Path) -> None:
+    model = ScriptedModel(
+        [
+            ModelResponse(
+                tool_calls=[ToolCall("same-call", "transition_state", {"target_state": "PLAN"})]
+            ),
+            ModelResponse(
+                tool_calls=[ToolCall("same-call", "transition_state", {"target_state": "PLAN"})]
+            ),
+            ModelResponse(content="continued"),
+        ]
+    )
+    machine = StateMachine()
+    loop = AgentLoop(model, ToolRegistry([TransitionTool(machine)]), machine, tmp_path)
+
+    result = await loop.handle_input("Inspect")
+
+    assert result.message == "continued"
+    assert machine.current is AgentState.PLAN

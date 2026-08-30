@@ -1,4 +1,5 @@
 import subprocess
+from itertools import count
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -31,8 +32,11 @@ def init_repo(path: Path) -> None:
     (path / "hello.txt").write_text("old\n", encoding="utf-8")
 
 
+_call_ids = count()
+
+
 def call(name: str, **arguments: Any) -> ModelResponse:
-    return ModelResponse(tool_calls=[ToolCall(f"call-{name}", name, arguments)])
+    return ModelResponse(tool_calls=[ToolCall(f"call-{name}-{next(_call_ids)}", name, arguments)])
 
 
 @pytest.mark.asyncio

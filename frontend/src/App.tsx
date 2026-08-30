@@ -18,10 +18,16 @@ export default function App() {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [tab, setTab] = useState<"plan" | "diff" | "trace">("plan");
-  const { activeSessionId, setActiveSession, runtimes, ingest, setConnected, connected } = useGuiStore();
+  const { activeSessionId, setActiveSession, runtimes, unreadSessions, ingest, hydrate, setConnected, connected } = useGuiStore();
   const projects = useQuery({ queryKey: ["projects"], queryFn: () => api.projects() });
   const sessions = useQuery({ queryKey: ["sessions", projectId], queryFn: () => api.sessions(projectId!), enabled: Boolean(projectId) });
+  const diff = useQuery({ queryKey: ["diff", activeSessionId], queryFn: () => api.diff(activeSessionId!), enabled: Boolean(activeSessionId) && tab === "diff", refetchInterval: tab === "diff" ? 1_000 : false });
+  const trace = useQuery({ queryKey: ["trace", activeSessionId], queryFn: () => api.trace(activeSessionId!), enabled: Boolean(activeSessionId) && tab === "trace" });
   const runtime = activeSessionId ? runtimes[activeSessionId] : undefined;
+
+  useEffect(() => {
+    document.title = unreadSessions.length ? `(${unreadSessions.length}) nano-vibe GUI` : "nano-vibe GUI";
+  }, [unreadSessions.length]);
 
   useEffect(() => {
     if (!config.token) return;
@@ -32,6 +38,11 @@ export default function App() {
     const project = projects.data?.[0];
     if (project && !projectId) setProjectId(project.id);
   }, [projects.data, projectId]);
+
+  useEffect(() => {
+    if (!activeSessionId) return;
+    void api.session(activeSessionId).then((value) => hydrate(activeSessionId, value.snapshot)).catch(() => undefined);
+  }, [activeSessionId, api, hydrate]);
 
   useEffect(() => {
     if (!activeSessionId) return;
@@ -52,7 +63,7 @@ export default function App() {
     <div className="workbench">
       <aside className="left-panel"><div className="panel-heading"><h2>项目</h2><button onClick={addProject}>＋</button></div>{projects.isError && <div className="error">{(projects.error as Error).message}</div>}{projects.data?.map((project: Project) => <button className={`project-item ${project.id === projectId ? "selected" : ""}`} key={project.id} onClick={() => setProjectId(project.id)}><strong>{project.name}</strong><small>{project.path}</small></button>)}{projectId && <><div className="panel-heading sessions-heading"><h2>Sessions</h2><button onClick={createSession}>＋</button></div>{sessions.data?.map((session) => <button className={`session-item ${session.session_id === activeSessionId ? "selected" : ""}`} key={session.session_id} onClick={() => chooseSession(session)}>{session.title}</button>)}</>}</aside>
       <section className="conversation"><div className="conversation-heading"><div><h1>{activeSessionId ? "工作 Session" : "选择一个 Session"}</h1><small>{runtime?.runtimeState ?? "IDLE"}</small></div>{runtime?.runtimeState === "RUNNING" && runtime.runId && <button className="stop" onClick={() => void api.stopRun(runtime.runId!)}>停止</button>}</div><MessageList messages={runtime?.messages ?? []} />{runtime?.pendingInteraction && <ApprovalCard interaction={runtime.pendingInteraction} onResolve={(decision) => { const socket = new WebSocket(websocketUrl(config.apiUrl, activeSessionId!)); socket.onopen = () => socket.send(JSON.stringify({ type: runtime.pendingInteraction?.kind === "approval" ? "resolve_approval" : "resolve_user_request", interaction_id: runtime.pendingInteraction?.interaction_id, decision })); }} />}</section>
-      <RightPanel tab={tab} onTab={setTab} runtime={runtime} />
+      <RightPanel tab={tab} onTab={setTab} runtime={runtime} diff={diff.data} trace={trace.data} />
     </div>
     <ShellPanel runtime={runtime} />
     <footer className="composer"><textarea value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} placeholder="描述你要完成的任务…" disabled={!activeSessionId} /><button onClick={() => void send()} disabled={!activeSessionId || !text.trim()}>发送</button></footer>

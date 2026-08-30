@@ -27,11 +27,14 @@ export class GuiApi {
 
   async exchange(token: string): Promise<void> { await this.request("/api/v1/auth/exchange", { method: "POST", body: JSON.stringify({ token }) }); }
   async bootstrap(): Promise<Record<string, unknown>> { return this.request("/api/v1/bootstrap"); }
+  async config(scope = "global"): Promise<Record<string, unknown>> { return this.request(`/api/v1/config?scope=${encodeURIComponent(scope)}`); }
+  async updateConfig(scope: string, values: Record<string, unknown>, secrets: Record<string, string> = {}): Promise<Record<string, unknown>> { return this.request("/api/v1/config", { method: "PUT", body: JSON.stringify({ scope, values, secrets }) }); }
   async projects(): Promise<Project[]> { return this.request("/api/v1/projects"); }
   async addProject(path: string, name?: string): Promise<Project> { return this.request("/api/v1/projects", { method: "POST", body: JSON.stringify({ path, name }) }); }
   async sessions(projectId: string): Promise<Session[]> { return this.request(`/api/v1/projects/${projectId}/sessions`); }
   async createSession(projectId: string, title?: string): Promise<Session> { return this.request(`/api/v1/projects/${projectId}/sessions`, { method: "POST", body: JSON.stringify({ title }) }); }
   async updateSession(sessionId: string, update: { title?: string; archived?: boolean }): Promise<Session> { return this.request(`/api/v1/sessions/${sessionId}`, { method: "PATCH", body: JSON.stringify(update) }); }
+  async session(sessionId: string): Promise<{ metadata: Session; snapshot: Record<string, unknown> | null }> { return this.request(`/api/v1/sessions/${sessionId}`); }
   async sendMessage(sessionId: string, text: string): Promise<{ run_id: string; status: string }> { return this.request(`/api/v1/sessions/${sessionId}/messages`, { method: "POST", body: JSON.stringify({ text }) }); }
   async stopRun(runId: string): Promise<{ run_id: string; status: string }> { return this.request(`/api/v1/runs/${runId}/stop`, { method: "POST" }); }
   async diff(sessionId: string): Promise<Record<string, unknown>> { return this.request(`/api/v1/sessions/${sessionId}/diff`); }

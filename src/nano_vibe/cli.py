@@ -9,6 +9,8 @@ from pathlib import Path
 import typer
 
 from nano_vibe.config import ConfigError, load_config
+from nano_vibe.gui.runtime import GlobalRunLock, LockAcquisitionError
+from nano_vibe.gui.storage import default_data_dir
 from nano_vibe.permissions import PermissionMode
 from nano_vibe.session import Session
 from nano_vibe.session_store import SessionStoreError
@@ -106,7 +108,16 @@ async def _run_repl(session: Session, ui: ConsoleUI) -> None:
             continue
         if handle_repl_command(text, session, ui):
             continue
-        result = await session.handle_input(text)
+        lock = GlobalRunLock(default_data_dir() / "run.lock")
+        try:
+            lock.acquire()
+        except LockAcquisitionError:
+            ui.console.print("[yellow]Another Agent task is already running.[/yellow]")
+            continue
+        try:
+            result = await session.handle_input(text)
+        finally:
+            lock.release()
         ui.show_result(result)
 
 

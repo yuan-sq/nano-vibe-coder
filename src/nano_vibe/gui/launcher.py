@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import secrets
 import shutil
 import socket
@@ -51,7 +52,7 @@ def launch_gui(
     api_port = _free_port()
     origin = f"http://127.0.0.1:{ui_port}"
     token = secrets.token_urlsafe(32)
-    environment = {"PYTHONPATH": str(Path(__file__).resolve().parents[2])}
+    environment = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[2])}
     api_process = subprocess.Popen(
         [
             sys.executable,
@@ -67,10 +68,14 @@ def launch_gui(
             token,
         ],
         cwd=root.parent,
-        env={**environment, **dict(__import__("os").environ)},
+        env=environment,
     )
     command = [npm, "run", "dev" if dev else "start", "--", "--host", "127.0.0.1", "--port", str(ui_port)]
-    frontend_process = subprocess.Popen(command, cwd=root, env={**dict(__import__("os").environ), "NANO_VIBE_API_URL": f"http://127.0.0.1:{api_port}"})
+    frontend_process = subprocess.Popen(
+        command,
+        cwd=root,
+        env={**os.environ, "NANO_VIBE_API_URL": f"http://127.0.0.1:{api_port}"},
+    )
     url = f"{origin}/#token={token}&api=http%3A%2F%2F127.0.0.1%3A{api_port}"
     print(f"nano-vibe GUI: {url}")
     if not no_open:

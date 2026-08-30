@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
-import { extname, join, normalize } from "node:path";
+import { extname, join, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(fileURLToPath(new URL(".", import.meta.url)), "dist");
@@ -11,8 +11,9 @@ const contentTypes = { ".html": "text/html; charset=utf-8", ".js": "text/javascr
 
 createServer(async (request, response) => {
   try {
-    const requested = normalize(join(root, request.url === "/" ? "index.html" : request.url));
-    const file = requested.startsWith(root) ? requested : join(root, "index.html");
+    const pathOnly = (request.url || "/").split("?", 1)[0];
+    const requested = normalize(join(root, pathOnly === "/" ? "index.html" : pathOnly));
+    const file = requested === root || requested.startsWith(`${root}${sep}`) ? requested : join(root, "index.html");
     await stat(file);
     response.writeHead(200, { "Content-Type": contentTypes[extname(file)] || "application/octet-stream" });
     response.end(await readFile(file));

@@ -17,4 +17,18 @@ describe("GUI store", () => {
     });
     expect(useGuiStore.getState().unreadSessions).toContain("session-1");
   });
+
+  it("hydrates a persisted snapshot after reconnect", () => {
+    useGuiStore.getState().reset();
+    useGuiStore.getState().hydrate("session-1", {
+      runtime_state: "AWAITING_INPUT",
+      history: [{ role: "user", content: "继续" }],
+      plan: [{ id: "one", status: "pending" }],
+      pending_interaction: { interaction_id: "q-1", kind: "user_request", content: "选择" }
+    });
+    const runtime = useGuiStore.getState().runtimes["session-1"];
+    expect(runtime.runtimeState).toBe("AWAITING_INPUT");
+    expect(runtime.messages[0].content).toBe("继续");
+    expect(runtime.pendingInteraction?.interaction_id).toBe("q-1");
+  });
 });

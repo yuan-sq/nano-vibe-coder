@@ -24,7 +24,7 @@ from .agent_runner import GuiAgentRunner
 from .diff import GitDiffService
 from .events import SessionEventBuffer
 from .runtime import GlobalRunLock, LockAcquisitionError
-from .security import StartupToken, is_allowed_origin, validate_project_path
+from .security import SecretStore, StartupToken, is_allowed_origin, validate_project_path
 from .storage import AppStorage, ProjectRecord, SessionMetadata
 from .trace import read_trace
 
@@ -51,6 +51,12 @@ class SessionUpdate(BaseModel):
 
 class MessageCreate(BaseModel):
     text: str = Field(min_length=1)
+
+
+class ConfigUpdate(BaseModel):
+    scope: str = "global"
+    values: dict[str, Any] = Field(default_factory=dict)
+    secrets: dict[str, str] = Field(default_factory=dict)
 
 
 class RunConflict(RuntimeError):
@@ -153,6 +159,7 @@ class TaskCoordinator:
             await asyncio.wait_for(asyncio.shield(active.task), timeout=3)
         except asyncio.TimeoutError:
             active.task.cancel()
+            await asyncio.gather(active.task, return_exceptions=True)
         return True
 
     async def resolve(self, session_id: str, interaction_id: str, decision: str) -> bool:
@@ -183,6 +190,7 @@ class GuiState:
     require_auth: bool
     frontend_origin: str
     home: Path
+    secret_store: SecretStore
 
 
 def _project_dict(project: ProjectRecord) -> dict[str, Any]:
@@ -238,6 +246,7 @@ def create_app(
         require_auth=require_auth,
         frontend_origin=frontend_origin,
         home=Path(home).expanduser().resolve() if home is not None else Path.home().resolve(),
+        secret_store=SecretStore(app_storage.root / ".env"),
     )
     app = FastAPI(title="nano-vibe GUI", version="3")
     app.state.gui = state
@@ -290,6 +299,26 @@ def create_app(
                 if active is not None and not active.task.done()
                 else None
             ),
+        }
+
+    @app.get("/api/v1/config", dependencies=[Depends(auth)])
+    async def get_config(scope: str = "global") -> dict[str, Any]:
+        values = state.storage.get_config(scope)
+        keys = ("OPENAI_API_KEY", "TAVILY_API_KEY")
+        return {"scope": scope, "values": values, "secrets": state.secret_store.status(keys)}
+
+    @app.put("/api/v1/config", dependencies=[Depends(auth)])
+    async def update_config(payload: ConfigUpdate) -> dict[str, Any]:
+        if payload.scope.strip() == "":
+            raise HTTPException(status_code=400, detail={"code": "invalid_config_scope"})
+        state.storage.set_config(payload.scope, payload.values)
+        for key, value in payload.secrets.items():
+            state.secret_store.set(key, value)
+        keys = ("OPENAI_API_KEY", "TAVILY_API_KEY")
+        return {
+            "scope": payload.scope,
+            "values": state.storage.get_config(payload.scope),
+            "secrets": state.secret_store.status(keys),
         }
 
     @app.get("/api/v1/projects", dependencies=[Depends(auth)])

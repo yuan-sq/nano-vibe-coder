@@ -71,6 +71,22 @@ def test_auth_exchange_is_origin_checked_and_single_use(tmp_path: Path) -> None:
     assert rejected.status_code == 401
 
 
+def test_config_api_persists_values_and_only_secret_status(tmp_path: Path) -> None:
+    app = create_app(storage=AppStorage(tmp_path / "app"), require_auth=False, home=tmp_path)
+    client = TestClient(app)
+
+    response = client.put(
+        "/api/v1/config",
+        json={"scope": "project:repo", "values": {"permission_mode": "normal"}, "secrets": {"OPENAI_API_KEY": "hidden"}},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["values"]["permission_mode"] == "normal"
+    assert body["secrets"]["OPENAI_API_KEY"] is True
+    assert "hidden" not in response.text
+    assert client.get("/api/v1/config?scope=project:repo").json()["values"]["permission_mode"] == "normal"
+
+
 def test_websocket_replays_events_and_reports_resync(tmp_path: Path) -> None:
     app = create_app(
         storage=AppStorage(tmp_path / "app"),

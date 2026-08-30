@@ -17,6 +17,21 @@ from nano_vibe.ui.console import ConsoleUI
 app = typer.Typer(add_completion=False, invoke_without_command=True)
 
 
+@app.command("gui")
+def gui(
+    port: int | None = typer.Option(None, "--port", help="Frontend port."),
+    no_open: bool = typer.Option(False, "--no-open", help="Do not open a browser window."),
+    dev: bool = typer.Option(False, "--dev", help="Start the Vite development server."),
+) -> None:
+    """Start the local browser GUI and its FastAPI service."""
+    from nano_vibe.gui.launcher import GuiLaunchError, launch_gui
+
+    try:
+        launch_gui(frontend_port=port, no_open=no_open, dev=dev)
+    except GuiLaunchError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
 @app.callback()
 def cli(
     ctx: typer.Context,

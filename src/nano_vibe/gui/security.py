@@ -59,8 +59,8 @@ class SecretStore:
 
 
 class StartupToken:
-    def __init__(self) -> None:
-        self.value = secrets.token_urlsafe(32)
+    def __init__(self, value: str | None = None) -> None:
+        self.value = value or secrets.token_urlsafe(32)
         self._used = False
 
     def exchange(self, candidate: str) -> bool:

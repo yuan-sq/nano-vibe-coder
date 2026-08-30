@@ -52,6 +52,7 @@ class AgentLoop:
         compact_target_ratio: float = 0.50,
         tokenizer: Tokenizer | None = None,
         on_tool: Callable[[str, dict[str, Any]], None] | None = None,
+        on_event: Callable[[str, dict[str, Any]], Any] | None = None,
         skill_manager: SkillManager | None = None,
         on_checkpoint: Callable[[], Any] | None = None,
     ) -> None:
@@ -68,6 +69,7 @@ class AgentLoop:
         self._turns = 0
         self._tool_errors = 0
         self.on_tool = on_tool
+        self.on_event = on_event
         self.skill_manager = skill_manager
         self.on_checkpoint = on_checkpoint
         self.compactor = ContextCompactor(
@@ -87,6 +89,7 @@ class AgentLoop:
             self.registry.clear_idempotency()
         self.history.append({"role": "user", "content": user_text})
         self._trace("user_input", content=user_text, state=self.machine.current.value)
+        await self._emit_event("user_input", {"content": user_text, "state": self.machine.current.value})
         await self._checkpoint()
         return await self._run_until_pause()
 
@@ -109,6 +112,7 @@ class AgentLoop:
             )
             allowed = self.machine.allowed_tools()
             self._trace("model_request", state=self.machine.current.value, tool_count=len(allowed))
+            await self._emit_event("model_request", {"state": self.machine.current.value, "tool_count": len(allowed)})
             try:
                 response = await self._complete(messages, self.registry.definitions(allowed))
             except Exception as exc:  # noqa: BLE001 - model providers are untrusted boundaries
@@ -121,6 +125,15 @@ class AgentLoop:
                 state=self.machine.current.value,
                 tool_count=len(response.tool_calls),
                 usage=dict(response.usage or {}),
+            )
+            await self._emit_event(
+                "model_response",
+                {
+                    "state": self.machine.current.value,
+                    "content": response.content,
+                    "tool_count": len(response.tool_calls),
+                    "usage": dict(response.usage or {}),
+                },
             )
             if not response.tool_calls:
                 status = LoopStatus.COMPLETED if self.machine.current is AgentState.DONE else LoopStatus.WAITING
@@ -159,6 +172,7 @@ class AgentLoop:
     async def _execute_tool(self, call: ToolCall) -> ToolResult:
         if self.on_tool is not None:
             self.on_tool(call.name, call.arguments)
+        await self._emit_event("tool_started", {"tool": call.name, "arguments": call.arguments, "tool_call_id": call.id})
         if call.parse_error:
             result = ToolResult.failure(f"Could not parse tool arguments: {call.parse_error}")
         else:
@@ -177,6 +191,10 @@ class AgentLoop:
             tool=call.name,
             ok=result.ok,
             metadata=dict(result.metadata),
+        )
+        await self._emit_event(
+            "tool_finished",
+            {"tool": call.name, "tool_call_id": call.id, **result.to_dict()},
         )
         return result
 
@@ -274,5 +292,12 @@ class AgentLoop:
         if self.on_checkpoint is None:
             return
         result = self.on_checkpoint()
+        if inspect.isawaitable(result):
+            await result
+
+    async def _emit_event(self, event: str, payload: dict[str, Any]) -> None:
+        if self.on_event is None:
+            return
+        result = self.on_event(event, payload)
         if inspect.isawaitable(result):
             await result

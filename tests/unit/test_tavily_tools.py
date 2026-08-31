@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 
+import nano_vibe.tools.web_search as web_search_module
 from nano_vibe.tools.web_extract import WebExtractTool
 from nano_vibe.tools.web_search import WebSearchTool
 
@@ -78,6 +79,54 @@ async def test_tavily_requires_explicit_env_file_when_client_not_injected(tmp_pa
         assert str(tmp_path / "missing.env") in result.output
     else:
         assert result.error.code == "tavily_dependency_missing"
+
+
+@pytest.mark.asyncio
+async def test_tavily_prefers_process_environment_over_config_and_dotenv(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("TAVILY_API_KEY=file-key\n", encoding="utf-8")
+    seen_keys: list[str] = []
+
+    class CapturingClient:
+        def __init__(self, *, api_key: str) -> None:
+            seen_keys.append(api_key)
+
+        async def search(self, **_: Any) -> dict[str, Any]:
+            return {"results": []}
+
+    monkeypatch.setenv("TAVILY_API_KEY", "env-key")
+    monkeypatch.setattr(web_search_module, "AsyncTavilyClient", CapturingClient)
+    result = await WebSearchTool(
+        api_key="config-key", env_file=env_file
+    ).execute({"query": "python"})
+
+    assert result.ok is True
+    assert seen_keys == ["env-key"]
+
+
+@pytest.mark.asyncio
+async def test_tavily_uses_config_key_when_environment_and_dotenv_are_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen_keys: list[str] = []
+
+    class CapturingClient:
+        def __init__(self, *, api_key: str) -> None:
+            seen_keys.append(api_key)
+
+        async def search(self, **_: Any) -> dict[str, Any]:
+            return {"results": []}
+
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    monkeypatch.setattr(web_search_module, "AsyncTavilyClient", CapturingClient)
+    result = await WebSearchTool(
+        api_key="config-key", env_file=tmp_path / "missing.env"
+    ).execute({"query": "python"})
+
+    assert result.ok is True
+    assert seen_keys == ["config-key"]
 
 
 @pytest.mark.asyncio

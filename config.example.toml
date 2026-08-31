@@ -30,6 +30,7 @@ fallback = ["default"]
 
 [tavily]
 # The file is read explicitly relative to the target workspace.
+# api_key = "tvly-replace-me"
 env_file = ".env"
 search_depth = "basic"
 max_results = 5

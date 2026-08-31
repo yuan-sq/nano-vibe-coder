@@ -5,10 +5,12 @@ from typing import Any, cast
 import pytest
 
 from nano_vibe.agent.loop import LoopStatus
+from nano_vibe.config import load_config
 from nano_vibe.models.base import ModelResponse
 from nano_vibe.session import Session
 from nano_vibe.session_store import SessionStore
 from nano_vibe.tools.shell import ShellTool
+from nano_vibe.tools.web_search import WebSearchTool
 
 
 class PlainModel:
@@ -40,6 +42,45 @@ def test_session_applies_shell_runtime_limits(tmp_path: Path) -> None:
     shell = cast(ShellTool, session.registry._tools["shell"])
     assert shell.timeout_seconds == 7
     assert shell.max_output_chars == 123
+
+
+def test_session_propagates_tavily_api_key_from_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        """
+active_model = "default"
+[models.default]
+name = "default"
+url = "https://example.test/v1"
+model_name = "demo"
+[tavily]
+api_key = "config-key"
+""",
+        encoding="utf-8",
+    )
+
+    class UI:
+        async def write_stream(self, _: str) -> None:
+            pass
+
+        async def ask(self, _: str, __: list[str]) -> str:
+            return "answer"
+
+        async def approve(self, _: str, __: dict[str, Any]) -> bool:
+            return True
+
+        def tool_start(self, _: str, __: dict[str, Any]) -> None:
+            pass
+
+    monkeypatch.setenv("OPENAI_API_KEY", "model-key")
+    config = load_config(config_path)
+    session = Session.from_config(config, tmp_path, UI())
+    tool = cast(WebSearchTool, session.registry._tools["web_search"])
+
+    assert tool._tavily.api_key == "config-key"
+    assert "config-key" not in repr(config.tavily)
 
 
 @pytest.mark.asyncio

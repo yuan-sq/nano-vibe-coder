@@ -62,6 +62,7 @@ class AppConfig:
 class TavilyConfig:
     """Settings for the optional Tavily Search/Extract integration."""
 
+    api_key: str = field(default="", repr=False)
     env_file: str = ".env"
     search_depth: str = "basic"
     max_results: int = 5
@@ -166,6 +167,9 @@ def _string_list(value: Any, key: str, *, allow_empty: bool = True) -> tuple[str
 
 
 def _tavily_from_values(values: Mapping[str, Any]) -> TavilyConfig:
+    api_key = values.get("api_key", "")
+    if not isinstance(api_key, str):
+        raise ConfigError("tavily.api_key must be a string")
     env_file = values.get("env_file", ".env")
     if not isinstance(env_file, str) or not env_file.strip():
         raise ConfigError("tavily.env_file must be a non-empty string")
@@ -176,6 +180,7 @@ def _tavily_from_values(values: Mapping[str, Any]) -> TavilyConfig:
     max_extract_urls = _positive_int(values, "max_extract_urls", 5, "tavily")
     max_extract_chars = _positive_int(values, "max_extract_chars", 30_000, "tavily")
     return TavilyConfig(
+        api_key=api_key,
         env_file=env_file,
         search_depth=search_depth,
         max_results=max_results,

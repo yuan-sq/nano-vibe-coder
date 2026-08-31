@@ -57,6 +57,7 @@ class Session:
         shell_timeout_seconds: float = 300,
         shell_max_output_chars: int = 50_000,
         tavily_env_file: str | Path = ".env",
+        tavily_api_key: str | None = None,
     ) -> None:
         self.workspace = Path(workspace).resolve()
         self.machine = machine or StateMachine()
@@ -92,8 +93,16 @@ class Session:
                     LoadSkillTool(self.skill_manager),
                     ReadSkillTool(self.skill_manager),
                     UnloadSkillTool(self.skill_manager),
-                    WebSearchTool(workspace=self.workspace, env_file=tavily_env_file),
-                    WebExtractTool(workspace=self.workspace, env_file=tavily_env_file),
+                    WebSearchTool(
+                        workspace=self.workspace,
+                        env_file=tavily_env_file,
+                        api_key=tavily_api_key,
+                    ),
+                    WebExtractTool(
+                        workspace=self.workspace,
+                        env_file=tavily_env_file,
+                        api_key=tavily_api_key,
+                    ),
                 ],
                 permission_policy=permission_policy,
             )
@@ -261,4 +270,5 @@ class Session:
             shell_timeout_seconds=config.runtime.shell_timeout_seconds,
             shell_max_output_chars=config.runtime.shell_max_output_chars,
             tavily_env_file=config.tavily.env_file,
+            tavily_api_key=config.tavily.api_key,
         )

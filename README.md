@@ -53,6 +53,10 @@ NANO_VIBE_LIVE_TAVILY=1 uv run pytest tests/integration/test_tavily_live.py -q
 然后重启 GUI。`[tavily].env_file` 可以在根目录 `config.toml` 中改为相对所选项目
 的路径或绝对路径；程序不会自动搜索其他目录中的 `.env`。
 
+也可以直接在被 Git 忽略的根目录 `config.toml` 中配置 `tavily.api_key`。运行
+`uv run python test_web_search.py` 只检查配置和 SDK；加上 `--live` 才会执行一次真实搜索，
+例如：`uv run python test_web_search.py --live --query "Python 3.13"`。
+
 ## 开发检查
 
 ```bash

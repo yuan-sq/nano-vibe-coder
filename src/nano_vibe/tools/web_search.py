@@ -70,7 +70,7 @@ class _TavilyTool(Tool):
         if self.client is not None:
             return self.client, None
         file_values = load_env_file(self.env_file)
-        key = self.api_key or os.environ.get("TAVILY_API_KEY") or file_values.get("TAVILY_API_KEY")
+        key = os.environ.get("TAVILY_API_KEY") or self.api_key or file_values.get("TAVILY_API_KEY")
         if not key:
             return None, ToolResult.failure(
                 f"Tavily web search is not configured: set TAVILY_API_KEY in {self.env_file} or in the process environment",

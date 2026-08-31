@@ -85,6 +85,7 @@ def test_load_config_reads_v2_permissions_routes_and_tavily_settings(tmp_path: P
 
         [tavily]
         env_file = ".env.test"
+        api_key = "config-key"
         """,
     )
 
@@ -95,6 +96,25 @@ def test_load_config_reads_v2_permissions_routes_and_tavily_settings(tmp_path: P
     assert config.state_models["REQUIREMENTS"].name == "fallback"
     assert config.fallback_models == ("default",)
     assert config.tavily.env_file == ".env.test"
+    assert config.tavily.api_key == "config-key"
+
+
+def test_load_config_rejects_non_string_tavily_api_key(tmp_path: Path) -> None:
+    path = write_config(
+        tmp_path,
+        """
+        active_model = "default"
+        [models.default]
+        name = "default"
+        url = "https://example.test/v1"
+        model_name = "demo"
+        [tavily]
+        api_key = 1
+        """,
+    )
+
+    with pytest.raises(ConfigError, match="tavily.api_key"):
+        load_config(path)
 
 
 def test_load_config_rejects_unknown_permission_mode(tmp_path: Path) -> None:

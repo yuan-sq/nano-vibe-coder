@@ -6,9 +6,20 @@ import { ApprovalCard, MessageList } from "./components/MessageList";
 import { RightPanel, ShellPanel } from "./components/RightPanel";
 import "./styles.css";
 
-function connectionConfig() {
-  const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
-  return { apiUrl: params.get("api") || import.meta.env.VITE_API_URL || "http://127.0.0.1:8000", token: params.get("token") };
+export function connectionConfig() {
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const queryParams = new URLSearchParams(window.location.search);
+  return {
+    apiUrl: hashParams.get("api") || queryParams.get("api") || import.meta.env.VITE_API_URL || "http://127.0.0.1:8000",
+    token: hashParams.get("token")
+  };
+}
+
+function persistConnectionConfig(apiUrl: string) {
+  const url = new URL(window.location.href);
+  url.hash = "";
+  url.searchParams.set("api", apiUrl);
+  window.history.replaceState({}, "", `${url.pathname}${url.search}`);
 }
 
 export default function App() {
@@ -31,7 +42,7 @@ export default function App() {
 
   useEffect(() => {
     if (!config.token) return;
-    api.exchange(config.token).then(() => { window.history.replaceState({}, "", window.location.pathname); queryClient.invalidateQueries({ queryKey: ["projects"] }); }).catch(() => undefined);
+    api.exchange(config.token).then(() => { persistConnectionConfig(config.apiUrl); queryClient.invalidateQueries({ queryKey: ["projects"] }); }).catch(() => undefined);
   }, [api, config.token, queryClient]);
 
   useEffect(() => {

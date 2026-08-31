@@ -12,7 +12,7 @@ export class GuiApi {
   constructor(readonly baseUrl: string, private readonly fetcher: typeof fetch = fetch) {}
 
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
-    const response = await this.fetcher(`${this.baseUrl}${path}`, {
+    const response = await this.fetcher.call(globalThis, `${this.baseUrl}${path}`, {
       ...init,
       credentials: "include",
       headers: { "Content-Type": "application/json", ...(init.headers ?? {}) }

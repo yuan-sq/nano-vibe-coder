@@ -258,8 +258,10 @@ async def test_agent_loop_retries_tool_call_without_explanation(tmp_path: Path) 
     ]
     assert assistant_tool_call_ids == ["accepted-call"]
     assert "rejected-call" not in assistant_tool_call_ids
-    tool_history = next(message for message in loop.history if message.get("role") == "tool")
-    assert tool_history["tool_call_id"] == "accepted-call"
+    tool_history_ids = [
+        message["tool_call_id"] for message in loop.history if message.get("role") == "tool"
+    ]
+    assert tool_history_ids == ["accepted-call"]
     retry_payload = next(payload for event, payload in events if event == "model_explanation_retry")
     assert retry_payload == {
         "attempt": 1,
@@ -321,8 +323,10 @@ async def test_agent_loop_falls_back_after_three_explanation_retries(tmp_path: P
     ]
     assert assistant_tool_call_ids == ["accepted-fallback-call"]
     assert not {"rejected-call-1", "rejected-call-2", "rejected-call-3"}.intersection(assistant_tool_call_ids)
-    tool_history = next(message for message in loop.history if message.get("role") == "tool")
-    assert tool_history["tool_call_id"] == "accepted-fallback-call"
+    tool_history_ids = [
+        message["tool_call_id"] for message in loop.history if message.get("role") == "tool"
+    ]
+    assert tool_history_ids == ["accepted-fallback-call"]
     retries = [payload for event, payload in events if event == "model_explanation_retry"]
     assert len(retries) == 3
     for request in model.requests[1:4]:

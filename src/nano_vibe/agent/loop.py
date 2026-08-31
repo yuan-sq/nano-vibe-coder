@@ -21,6 +21,13 @@ from .compaction import ApproximateTokenizer, ContextCompactor, Tokenizer
 from .context import build_context
 from .state import AgentState, StateMachine
 
+_MAX_TOOL_EXPLANATION_RETRIES = 3
+_TOOL_EXPLANATION_CORRECTION = (
+    "Your previous response contained only tool calls without a user-facing explanation. "
+    "Please return the intended tool calls again and include one brief user-facing "
+    "explanation in the assistant content; do not reveal hidden chain-of-thought."
+)
+
 
 class LoopStatus(str, Enum):
     COMPLETED = "completed"
@@ -114,7 +121,9 @@ class AgentLoop:
             self._trace("model_request", state=self.machine.current.value, tool_count=len(allowed))
             await self._emit_event("model_request", {"state": self.machine.current.value, "tool_count": len(allowed)})
             try:
-                response = await self._complete(messages, self.registry.definitions(allowed))
+                response = await self._complete_with_tool_explanation(
+                    messages, self.registry.definitions(allowed)
+                )
             except Exception as exc:  # noqa: BLE001 - model providers are untrusted boundaries
                 self._trace("model_error", state=self.machine.current.value, error=str(exc))
                 return LoopResult(LoopStatus.ERROR, f"Model request failed: {exc}", self._turns)
@@ -169,6 +178,43 @@ class AgentLoop:
                         self._turns,
                     )
         return LoopResult(LoopStatus.ABORTED, "Stopped after reaching the model turn limit.", self._turns)
+
+    async def _complete_with_tool_explanation(
+        self,
+        messages: Sequence[Mapping[str, Any]],
+        tools: Sequence[Mapping[str, Any]],
+    ) -> ModelResponse:
+        response = await self._complete(messages, tools)
+        if not response.tool_calls or str(response.content or "").strip():
+            return response
+
+        for attempt in range(1, _MAX_TOOL_EXPLANATION_RETRIES + 1):
+            tool_names = [call.name for call in response.tool_calls]
+            payload = {
+                "attempt": attempt,
+                "max_retries": _MAX_TOOL_EXPLANATION_RETRIES,
+                "tool_names": tool_names,
+            }
+            self._trace("model_explanation_retry", **payload)
+            await self._emit_event("model_explanation_retry", payload)
+            response = await self._complete(
+                [
+                    *messages,
+                    {"role": "system", "content": _TOOL_EXPLANATION_CORRECTION},
+                ],
+                tools,
+            )
+            if not response.tool_calls or str(response.content or "").strip():
+                return response
+
+        tool_names = [call.name for call in response.tool_calls]
+        payload = {
+            "attempts": _MAX_TOOL_EXPLANATION_RETRIES + 1,
+            "tool_names": tool_names,
+        }
+        self._trace("model_explanation_fallback", **payload)
+        await self._emit_event("model_explanation_fallback", payload)
+        return response
 
     async def _execute_tool(self, call: ToolCall) -> ToolResult:
         if self.on_tool is not None:

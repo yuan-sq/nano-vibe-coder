@@ -43,7 +43,10 @@ class CompactingModel(ScriptedModel):
 async def test_agent_loop_executes_tool_and_pauses_on_plain_response(tmp_path: Path) -> None:
     model = ScriptedModel(
         [
-            ModelResponse(tool_calls=[ToolCall("call-1", "transition_state", {"target_state": "PLAN"})]),
+            ModelResponse(
+                content="I will move into planning.",
+                tool_calls=[ToolCall("call-1", "transition_state", {"target_state": "PLAN"})],
+            ),
             ModelResponse(content="I have prepared the plan."),
         ]
     )
@@ -64,7 +67,10 @@ async def test_agent_loop_executes_tool_and_pauses_on_plain_response(tmp_path: P
 async def test_agent_loop_notifies_before_executing_tool(tmp_path: Path) -> None:
     model = ScriptedModel(
         [
-            ModelResponse(tool_calls=[ToolCall("call-1", "transition_state", {"target_state": "PLAN"})]),
+            ModelResponse(
+                content="I will move into planning.",
+                tool_calls=[ToolCall("call-1", "transition_state", {"target_state": "PLAN"})],
+            ),
             ModelResponse(content="ready"),
         ]
     )
@@ -82,7 +88,10 @@ async def test_agent_loop_notifies_before_executing_tool(tmp_path: Path) -> None
 async def test_agent_loop_compacts_history_before_next_model_turn(tmp_path: Path) -> None:
     model = CompactingModel(
         [
-            ModelResponse(tool_calls=[ToolCall("call-1", "transition_state", {"target_state": "PLAN"})]),
+            ModelResponse(
+                content="I will move into planning.",
+                tool_calls=[ToolCall("call-1", "transition_state", {"target_state": "PLAN"})],
+            ),
             ModelResponse(content="Plan is ready."),
         ]
     )
@@ -109,8 +118,14 @@ async def test_agent_loop_compacts_history_before_next_model_turn(tmp_path: Path
 async def test_agent_loop_resets_turn_limit_for_a_new_task_after_done(tmp_path: Path) -> None:
     model = ScriptedModel(
         [
-            ModelResponse(tool_calls=[ToolCall("call-1", "transition_state", {"target_state": "PLAN"})]),
-            ModelResponse(tool_calls=[ToolCall("call-2", "transition_state", {"target_state": "IMPLEMENT"})]),
+            ModelResponse(
+                content="I will move into planning.",
+                tool_calls=[ToolCall("call-1", "transition_state", {"target_state": "PLAN"})],
+            ),
+            ModelResponse(
+                content="I will move into implementation.",
+                tool_calls=[ToolCall("call-2", "transition_state", {"target_state": "IMPLEMENT"})],
+            ),
             ModelResponse(content="continuing"),
         ]
     )
@@ -152,9 +167,11 @@ async def test_agent_loop_replays_same_tool_call_id_without_second_side_effect(t
     model = ScriptedModel(
         [
             ModelResponse(
+                content="I will move into planning.",
                 tool_calls=[ToolCall("same-call", "transition_state", {"target_state": "PLAN"})]
             ),
             ModelResponse(
+                content="I will move into planning again.",
                 tool_calls=[ToolCall("same-call", "transition_state", {"target_state": "PLAN"})]
             ),
             ModelResponse(content="continued"),
@@ -191,3 +208,84 @@ async def test_agent_loop_injects_loaded_skill_into_model_context(tmp_path: Path
 
     system_message = model.requests[0][0][0]["content"]
     assert "Use this skill." in system_message
+
+
+@pytest.mark.asyncio
+async def test_agent_loop_retries_tool_call_without_explanation(tmp_path: Path) -> None:
+    model = ScriptedModel(
+        [
+            ModelResponse(
+                tool_calls=[ToolCall("call-1", "transition_state", {"target_state": "PLAN"})]
+            ),
+            ModelResponse(
+                content="I will move into planning.",
+                tool_calls=[ToolCall("call-1", "transition_state", {"target_state": "PLAN"})],
+            ),
+            ModelResponse(content="The planning state is ready."),
+        ]
+    )
+    machine = StateMachine()
+    registry = ToolRegistry([TransitionTool(machine)])
+    events: list[tuple[str, dict[str, Any]]] = []
+    loop = AgentLoop(
+        model,
+        registry,
+        machine,
+        tmp_path,
+        on_event=lambda name, payload: events.append((name, payload)),
+    )
+
+    result = await loop.handle_input("Plan this")
+
+    assert result.message == "The planning state is ready."
+    assert machine.current is AgentState.PLAN
+    assert len(model.requests) == 3
+    assert sum(1 for event, _payload in events if event == "tool_started") == 1
+    assert not any(
+        message.get("role") == "assistant" and not str(message.get("content") or "").strip()
+        for message in loop.history
+    )
+    retry_payload = next(payload for event, payload in events if event == "model_explanation_retry")
+    assert retry_payload == {
+        "attempt": 1,
+        "max_retries": 3,
+        "tool_names": ["transition_state"],
+    }
+    correction = model.requests[1][0][-1]
+    assert correction["role"] == "system"
+    assert "brief user-facing explanation" in correction["content"]
+
+
+@pytest.mark.asyncio
+async def test_agent_loop_falls_back_after_three_explanation_retries(tmp_path: Path) -> None:
+    tool_call = ToolCall("call-1", "transition_state", {"target_state": "PLAN"})
+    model = ScriptedModel(
+        [
+            ModelResponse(tool_calls=[tool_call]),
+            ModelResponse(tool_calls=[tool_call]),
+            ModelResponse(tool_calls=[tool_call]),
+            ModelResponse(content="   ", tool_calls=[tool_call]),
+            ModelResponse(content="The planning state is ready."),
+        ]
+    )
+    machine = StateMachine()
+    registry = ToolRegistry([TransitionTool(machine)])
+    events: list[tuple[str, dict[str, Any]]] = []
+    loop = AgentLoop(
+        model,
+        registry,
+        machine,
+        tmp_path,
+        on_event=lambda name, payload: events.append((name, payload)),
+    )
+
+    result = await loop.handle_input("Plan this")
+
+    assert result.message == "The planning state is ready."
+    assert machine.current is AgentState.PLAN
+    assert len(model.requests) == 5
+    assert sum(1 for event, _payload in events if event == "tool_started") == 1
+    retries = [payload for event, payload in events if event == "model_explanation_retry"]
+    assert len(retries) == 3
+    fallback_payload = next(payload for event, payload in events if event == "model_explanation_fallback")
+    assert fallback_payload == {"attempts": 4, "tool_names": ["transition_state"]}

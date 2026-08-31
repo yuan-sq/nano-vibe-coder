@@ -28,7 +28,8 @@ _ids = count()
 
 def call(name: str, **arguments: Any) -> ModelResponse:
     return ModelResponse(
-        tool_calls=[ToolCall(f"offline-{next(_ids)}", name, arguments)]
+        content=f"I will run {name}.",
+        tool_calls=[ToolCall(f"offline-{next(_ids)}", name, arguments)],
     )
 
 

@@ -82,7 +82,10 @@ def test_trace_reader_filters_events(tmp_path: Path) -> None:
 class _Model:
     def __init__(self) -> None:
         self.responses = [
-            ModelResponse(tool_calls=[ToolCall("call-1", "transition_state", {"target_state": "PLAN"})]),
+            ModelResponse(
+                content="I will move into planning.",
+                tool_calls=[ToolCall("call-1", "transition_state", {"target_state": "PLAN"})],
+            ),
             ModelResponse(content="done"),
         ]
 

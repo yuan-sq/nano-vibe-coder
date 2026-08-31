@@ -37,7 +37,10 @@ _call_ids = count()
 
 
 def call(name: str, **arguments: Any) -> ModelResponse:
-    return ModelResponse(tool_calls=[ToolCall(f"call-{name}-{next(_call_ids)}", name, arguments)])
+    return ModelResponse(
+        content=f"I will run {name}.",
+        tool_calls=[ToolCall(f"call-{name}-{next(_call_ids)}", name, arguments)],
+    )
 
 
 @pytest.mark.asyncio

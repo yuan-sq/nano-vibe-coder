@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 from collections import defaultdict
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from typing import Any
 
 from openai import AsyncOpenAI
@@ -91,7 +92,7 @@ class OpenAICompatibleModel:
         self,
         config: ModelConfig,
         retries: int = 5,
-        on_text: Callable[[str], None] | None = None,
+        on_text: Callable[[str], None | Awaitable[None]] | None = None,
         client: Any | None = None,
     ) -> None:
         self.config = config
@@ -134,5 +135,7 @@ class OpenAICompatibleModel:
                 delta = _value(choices[0], "delta")
                 text = _value(delta, "content", "")
                 if text:
-                    self.on_text(text)
+                    callback_result = self.on_text(text)
+                    if inspect.isawaitable(callback_result):
+                        await callback_result
         return assemble_stream(chunks)

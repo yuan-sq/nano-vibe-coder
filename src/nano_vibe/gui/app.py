@@ -10,7 +10,7 @@ from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -65,6 +65,11 @@ class RunConflict(RuntimeError):
         self.active_run_id = active_run_id
 
 
+class WebSocketSender(Protocol):
+    async def send_json(self, data: Any) -> None:
+        ...
+
+
 @dataclass
 class ActiveRun:
     run_id: str
@@ -76,12 +81,32 @@ class ActiveRun:
 class EventHub:
     def __init__(self, event_buffer: SessionEventBuffer) -> None:
         self.event_buffer = event_buffer
-        self._subscribers: dict[str, set[WebSocket]] = defaultdict(set)
+        self._subscribers: dict[str, set[WebSocketSender]] = defaultdict(set)
+        self._session_locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 
-    def subscribe(self, session_id: str, websocket: WebSocket) -> None:
-        self._subscribers[session_id].add(websocket)
+    async def subscribe(
+        self, session_id: str, websocket: WebSocketSender, last_seq: int | None
+    ) -> None:
+        """Subscribe and replay while publish is serialized for this session."""
 
-    def unsubscribe(self, session_id: str, websocket: WebSocket) -> None:
+        async with self._session_locks[session_id]:
+            self._subscribers[session_id].add(websocket)
+            replay = self.event_buffer.replay(session_id, last_seq)
+            try:
+                if replay.resync_required:
+                    await websocket.send_json(
+                        {"type": "resync_required", "latest_seq": replay.latest_seq}
+                    )
+                else:
+                    for event in replay.events:
+                        await websocket.send_json(
+                            {"type": "event", "event": event.to_dict()}
+                        )
+            except Exception:
+                self.unsubscribe(session_id, websocket)
+                raise
+
+    def unsubscribe(self, session_id: str, websocket: WebSocketSender) -> None:
         subscribers = self._subscribers.get(session_id)
         if subscribers is None:
             return
@@ -92,13 +117,14 @@ class EventHub:
     async def publish(
         self, session_id: str, run_id: str | None, event_type: str, payload: dict[str, Any]
     ) -> None:
-        event = self.event_buffer.append(session_id, run_id, event_type, payload)
-        message = {"type": "event", "event": event.to_dict()}
-        for websocket in tuple(self._subscribers.get(session_id, ())):
-            try:
-                await websocket.send_json(message)
-            except Exception:  # noqa: BLE001 - disconnects are cleaned up lazily.
-                self.unsubscribe(session_id, websocket)
+        async with self._session_locks[session_id]:
+            event = self.event_buffer.append(session_id, run_id, event_type, payload)
+            message = {"type": "event", "event": event.to_dict()}
+            for websocket in tuple(self._subscribers.get(session_id, ())):
+                try:
+                    await websocket.send_json(message)
+                except Exception:  # noqa: BLE001 - disconnects are cleaned up lazily.
+                    self.unsubscribe(session_id, websocket)
 
 
 class TaskCoordinator:
@@ -438,18 +464,24 @@ def create_app(
             await websocket.close(code=4403)
             return
         await websocket.accept()
-        hub.subscribe(session_id, websocket)
         try:
             while True:
                 command = await websocket.receive_json()
                 command_type = command.get("type")
                 if command_type == "subscribe":
-                    replay = buffer.replay(session_id, command.get("last_seq"))
-                    if replay.resync_required:
-                        await websocket.send_json({"type": "resync_required"})
-                    else:
-                        for event in replay.events:
-                            await websocket.send_json({"type": "event", "event": event.to_dict()})
+                    last_seq = command.get("last_seq")
+                    if last_seq is not None and (
+                        isinstance(last_seq, bool) or not isinstance(last_seq, int)
+                    ):
+                        await websocket.send_json(
+                            {
+                                "type": "error",
+                                "code": "invalid_last_seq",
+                                "message": "last_seq must be an integer",
+                            }
+                        )
+                        continue
+                    await hub.subscribe(session_id, websocket, last_seq)
                 elif command_type == "stop":
                     run_id = str(command.get("run_id", ""))
                     await websocket.send_json(

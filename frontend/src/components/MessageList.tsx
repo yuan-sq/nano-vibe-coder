@@ -1,4 +1,6 @@
+import { useState } from "react";
 import type { ChatMessage } from "../lib/protocol";
+import type { PendingInteraction } from "../lib/protocol";
 
 export function MessageList({ messages }: { messages: ChatMessage[] }) {
   return <div className="message-list">
@@ -10,7 +12,23 @@ export function MessageList({ messages }: { messages: ChatMessage[] }) {
   </div>;
 }
 
-export function ApprovalCard({ interaction, onResolve }: { interaction: { interaction_id: string; content: string; tool_name?: string; capability?: string; reason?: string }; onResolve: (decision: string) => void }) {
+export function InteractionCard({ interaction, onResolve }: { interaction: PendingInteraction; onResolve: (decision: string) => void }) {
+  const [answer, setAnswer] = useState("");
+  if (interaction.kind === "user_request") {
+    const submit = () => {
+      const value = answer.trim();
+      if (value) {
+        onResolve(value);
+        setAnswer("");
+      }
+    };
+    return <section className="approval-card user-request-card">
+      <strong>需要你的回答</strong>
+      <p>{interaction.content}</p>
+      {interaction.options && interaction.options.length > 0 && <div className="actions">{interaction.options.map((option) => <button key={option} onClick={() => onResolve(option)}>{option}</button>)}</div>}
+      <div className="answer-row"><input value={answer} onChange={(event) => setAnswer(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") submit(); }} placeholder="输入你的回答" /><button onClick={submit} disabled={!answer.trim()}>提交回答</button></div>
+    </section>;
+  }
   return <section className="approval-card">
     <strong>需要你的确认</strong>
     <p>{interaction.content}</p>

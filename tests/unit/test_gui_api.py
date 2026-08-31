@@ -2,9 +2,10 @@ import asyncio
 import subprocess
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
-from nano_vibe.gui.app import create_app
+from nano_vibe.gui.app import EventHub, create_app
 from nano_vibe.gui.events import SessionEventBuffer
 from nano_vibe.gui.security import StartupToken
 from nano_vibe.gui.storage import AppStorage
@@ -104,7 +105,50 @@ def test_websocket_replays_events_and_reports_resync(tmp_path: Path) -> None:
 
     with TestClient(app).websocket_connect("/api/v1/ws/session-1") as websocket:
         websocket.send_json({"type": "subscribe", "last_seq": 0})
-        assert websocket.receive_json()["type"] == "resync_required"
+        message = websocket.receive_json()
+        assert message["type"] == "resync_required"
+        assert message["latest_seq"] == 2
+
+    with TestClient(app).websocket_connect("/api/v1/ws/session-1") as websocket:
+        websocket.send_json({"type": "subscribe", "last_seq": "invalid"})
+        assert websocket.receive_json() == {
+            "type": "error",
+            "code": "invalid_last_seq",
+            "message": "last_seq must be an integer",
+        }
+
+
+@pytest.mark.asyncio
+async def test_event_hub_serializes_replay_before_live_events() -> None:
+    class FakeWebSocket:
+        def __init__(self) -> None:
+            self.messages: list[dict[str, object]] = []
+            self.replay_started = asyncio.Event()
+            self.release_replay = asyncio.Event()
+
+        async def send_json(self, data: dict[str, object]) -> None:
+            self.messages.append(data)
+            event = data.get("event")
+            if isinstance(event, dict) and event.get("seq") == 1:
+                self.replay_started.set()
+                await self.release_replay.wait()
+
+    buffer = SessionEventBuffer()
+    buffer.append("session-1", "run-1", "replayed", {})
+    hub = EventHub(buffer)
+    websocket = FakeWebSocket()
+
+    subscribe = asyncio.create_task(hub.subscribe("session-1", websocket, 0))
+    await websocket.replay_started.wait()
+    publish = asyncio.create_task(hub.publish("session-1", "run-1", "live", {}))
+    await asyncio.sleep(0)
+    assert not publish.done()
+
+    websocket.release_replay.set()
+    await subscribe
+    await publish
+
+    assert [message["event"]["seq"] for message in websocket.messages] == [1, 2]  # type: ignore[index]
 
 
 async def _holding_runner(session_id: str, text: str, emit, stop_event: asyncio.Event) -> None:

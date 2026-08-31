@@ -69,6 +69,7 @@ class UIEvent:
 class EventReplay:
     events: tuple[UIEvent, ...] = ()
     resync_required: bool = False
+    latest_seq: int = 0
 
 
 class SessionEventBuffer:
@@ -109,13 +110,17 @@ class SessionEventBuffer:
 
     def replay(self, session_id: str, last_seq: int | None) -> EventReplay:
         events = self._events.get(session_id)
+        latest_seq = self._next_seq.get(session_id, 1) - 1
         if not events:
-            return EventReplay()
+            return EventReplay(latest_seq=latest_seq)
         oldest = events[0].seq
         requested = 0 if last_seq is None else last_seq
         if requested < oldest - 1:
-            return EventReplay(resync_required=True)
-        return EventReplay(tuple(event for event in events if event.seq > requested))
+            return EventReplay(resync_required=True, latest_seq=latest_seq)
+        return EventReplay(
+            tuple(event for event in events if event.seq > requested),
+            latest_seq=latest_seq,
+        )
 
     @staticmethod
     def _event_size(event: UIEvent) -> int:

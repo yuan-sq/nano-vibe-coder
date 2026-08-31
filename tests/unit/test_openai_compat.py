@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 from typing import Any
 
@@ -59,3 +60,20 @@ async def test_openai_compatible_model_retries_and_streams_text() -> None:
     assert len(client.chat.completions.calls) == 2
     assert client.chat.completions.calls[-1]["model"] == "model"
     assert client.chat.completions.calls[-1]["reasoning_effort"] == "medium"
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_model_awaits_async_stream_callback() -> None:
+    config = ModelConfig("demo", "https://example.test/v1", "model")
+    client = FakeClient()
+    client.chat.completions.failures = 0
+    streamed: list[str] = []
+
+    async def on_text(text: str) -> None:
+        await asyncio.sleep(0)
+        streamed.append(text)
+
+    model = OpenAICompatibleModel(config, retries=1, on_text=on_text, client=client)
+    await model.complete([{"role": "user", "content": "hi"}], [])
+
+    assert streamed == ["hello", " world"]

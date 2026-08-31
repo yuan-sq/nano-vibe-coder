@@ -90,8 +90,8 @@ class GuiUI:
         self.emit = emit
         self.broker = broker
 
-    def write_stream(self, text: str) -> None:
-        asyncio.ensure_future(self.emit("assistant_delta", {"text": text}))
+    async def write_stream(self, text: str) -> None:
+        await self.emit("assistant_delta", {"text": text})
 
     def tool_start(self, _name: str, _arguments: dict[str, Any]) -> None:
         return

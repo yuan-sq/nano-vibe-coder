@@ -8,7 +8,8 @@ interface GuiStore {
   connected: boolean;
   setActiveSession: (sessionId: string | null) => void;
   ingest: (event: UIEvent) => void;
-  hydrate: (sessionId: string, snapshot: Record<string, unknown> | null) => void;
+  hydrate: (sessionId: string, snapshot: Record<string, unknown> | null, source?: "initial" | "resync") => void;
+  setLastSeq: (sessionId: string, seq: number) => void;
   setConnected: (connected: boolean) => void;
   reset: () => void;
 }
@@ -24,6 +25,7 @@ export const useGuiStore = create<GuiStore>((set) => ({
   })),
   ingest: (event) => set((state) => {
     const current = state.runtimes[event.session_id] ?? initialRuntime(event.session_id);
+    if (event.seq <= current.lastSeq) return state;
     const runtimes = { ...state.runtimes, [event.session_id]: applyEvent(current, event) };
     const shouldMarkUnread = state.activeSessionId !== event.session_id;
     const unreadSessions = shouldMarkUnread && !state.unreadSessions.includes(event.session_id)
@@ -31,7 +33,7 @@ export const useGuiStore = create<GuiStore>((set) => ({
       : state.unreadSessions;
     return { runtimes, unreadSessions };
   }),
-  hydrate: (sessionId, snapshot) => set((state) => {
+  hydrate: (sessionId, snapshot, source = "initial") => set((state) => {
     if (!snapshot) return state;
     const history = Array.isArray(snapshot.history) ? snapshot.history : [];
     const messages = history.flatMap((item) => {
@@ -41,15 +43,33 @@ export const useGuiStore = create<GuiStore>((set) => ({
       if (role !== "user" && role !== "assistant" && role !== "tool") return [];
       return [{ role: role as ChatMessage["role"], content: String(message.content ?? ""), tool: typeof message.name === "string" ? message.name : undefined }];
     });
-    const current = initialRuntime(sessionId);
+    const current = state.runtimes[sessionId] ?? initialRuntime(sessionId);
+    const hasLiveEvents = source === "initial" && current.lastSeq > 0;
     const runtime: RuntimeView = {
       ...current,
-      runtimeState: typeof snapshot.runtime_state === "string" ? snapshot.runtime_state as RuntimeView["runtimeState"] : "IDLE",
-      messages,
-      plan: Array.isArray(snapshot.plan) ? snapshot.plan as Array<Record<string, unknown>> : [],
-      pendingInteraction: snapshot.pending_interaction && typeof snapshot.pending_interaction === "object" ? snapshot.pending_interaction as RuntimeView["pendingInteraction"] : null
+      runtimeState: hasLiveEvents
+        ? current.runtimeState
+        : typeof snapshot.runtime_state === "string"
+          ? snapshot.runtime_state as RuntimeView["runtimeState"]
+          : "IDLE",
+      messages: hasLiveEvents ? current.messages : messages,
+      plan: hasLiveEvents
+        ? current.plan
+        : Array.isArray(snapshot.plan)
+          ? snapshot.plan as Array<Record<string, unknown>>
+          : [],
+      pendingInteraction: hasLiveEvents
+        ? current.pendingInteraction
+        : snapshot.pending_interaction && typeof snapshot.pending_interaction === "object"
+          ? snapshot.pending_interaction as RuntimeView["pendingInteraction"]
+          : null
     };
     return { runtimes: { ...state.runtimes, [sessionId]: runtime } };
+  }),
+  setLastSeq: (sessionId, seq) => set((state) => {
+    const current = state.runtimes[sessionId] ?? initialRuntime(sessionId);
+    if (seq <= current.lastSeq) return state;
+    return { runtimes: { ...state.runtimes, [sessionId]: { ...current, lastSeq: seq } } };
   }),
   setConnected: (connected) => set({ connected }),
   reset: () => set({ activeSessionId: null, runtimes: {}, unreadSessions: [], connected: false })

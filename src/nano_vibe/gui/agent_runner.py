@@ -11,6 +11,7 @@ from typing import Any
 
 from nano_vibe.config import AppConfig
 from nano_vibe.gui.runtime import PendingInteraction
+from nano_vibe.permissions import ApprovalDecision
 from nano_vibe.session import Session
 
 
@@ -22,9 +23,11 @@ class InteractionBroker:
         self.on_pending: Callable[[PendingInteraction], Any] | None = None
         self.on_resolved: Callable[[PendingInteraction, str], Any] | None = None
         self.pending: dict[str, PendingInteraction] = {}
-        self._futures: dict[str, asyncio.Future[str | bool]] = {}
+        self._futures: dict[str, asyncio.Future[str]] = {}
 
-    async def approve(self, tool_name: str, arguments: dict[str, Any]) -> bool:
+    async def approve(
+        self, tool_name: str, arguments: dict[str, Any]
+    ) -> ApprovalDecision:
         interaction = PendingInteraction(
             interaction_id=uuid.uuid4().hex[:12],
             kind="approval",
@@ -36,8 +39,7 @@ class InteractionBroker:
             idempotency_key=f"approval:{uuid.uuid4().hex[:12]}",
             options=("once", "session", "deny"),
         )
-        result = await self._wait(interaction)
-        return result is True or result in {"once", "session", "allow", "approved"}
+        return ApprovalDecision.parse(await self._wait(interaction))
 
     async def ask(self, question: str, options: list[str]) -> str:
         interaction = PendingInteraction(
@@ -49,9 +51,9 @@ class InteractionBroker:
         result = await self._wait(interaction)
         return str(result)
 
-    async def _wait(self, interaction: PendingInteraction) -> str | bool:
+    async def _wait(self, interaction: PendingInteraction) -> str:
         loop = asyncio.get_running_loop()
-        future: asyncio.Future[str | bool] = loop.create_future()
+        future: asyncio.Future[str] = loop.create_future()
         self.pending[interaction.interaction_id] = interaction
         self._futures[interaction.interaction_id] = future
         if self.on_pending is not None:
@@ -73,7 +75,7 @@ class InteractionBroker:
         interaction = self.pending.get(interaction_id)
         if future is None or interaction is None or future.done():
             return False
-        future.set_result(decision if interaction.kind == "user_request" else decision in {"once", "session", "allow", "approved"})
+        future.set_result(decision)
         if self.on_resolved is not None:
             callback_result = self.on_resolved(interaction, decision)
             if inspect.isawaitable(callback_result):
@@ -99,7 +101,9 @@ class GuiUI:
     async def on_event(self, name: str, payload: dict[str, Any]) -> None:
         await self.emit(name, payload)
 
-    async def approve(self, tool_name: str, arguments: dict[str, Any]) -> bool:
+    async def approve(
+        self, tool_name: str, arguments: dict[str, Any]
+    ) -> ApprovalDecision:
         return await self.broker.approve(tool_name, arguments)
 
     async def ask(self, question: str, options: list[str]) -> str:
@@ -147,6 +151,9 @@ class GuiAgentRunner:
         ui = GuiUI(emit, broker)
         session = Session.from_config(self.config, workspace, ui, session_id=session_id)
         holder["session"] = session
+        snapshot_path = session.session_store.path_for(session_id)
+        if snapshot_path.is_file():
+            session.restore_snapshot(session.session_store.load(session_id))
         session.runtime_state = "RUNNING"
         session.save_snapshot()
         agent_task = asyncio.create_task(session.handle_input(text))

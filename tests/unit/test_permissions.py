@@ -2,7 +2,7 @@ from typing import Any, ClassVar
 
 import pytest
 
-from nano_vibe.permissions import PermissionMode, PermissionPolicy
+from nano_vibe.permissions import ApprovalDecision, PermissionMode, PermissionPolicy
 from nano_vibe.tools.base import Tool, ToolError, ToolResult
 from nano_vibe.tools.registry import ToolRegistry
 
@@ -59,6 +59,43 @@ async def test_normal_policy_can_ask_async_approval() -> None:
 
     assert result.ok is True
     assert asked == [("dangerous", {"answer": 42})]
+
+
+@pytest.mark.asyncio
+async def test_session_approval_grants_only_the_same_tool() -> None:
+    decisions = iter([ApprovalDecision.SESSION, ApprovalDecision.ONCE])
+    asked: list[str] = []
+
+    async def approve(name: str, arguments: dict[str, Any]) -> ApprovalDecision:
+        del arguments
+        asked.append(name)
+        return next(decisions)
+
+    policy = PermissionPolicy(PermissionMode.NORMAL, approve=approve)
+
+    assert await policy.authorize("apply_patch", "write", {}) is True
+    assert await policy.authorize("apply_patch", "write", {}) is True
+    assert await policy.authorize("shell", "shell", {}) is True
+    assert asked == ["apply_patch", "shell"]
+    assert policy.session_grants == {"apply_patch"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("decision", "allowed"),
+    [
+        (ApprovalDecision.ONCE, True),
+        (ApprovalDecision.DENY, False),
+        (True, True),
+        (False, False),
+    ],
+)
+async def test_approval_decisions_and_bool_compatibility(
+    decision: ApprovalDecision | bool, allowed: bool
+) -> None:
+    policy = PermissionPolicy(PermissionMode.NORMAL, approve=lambda _name, _args: decision)
+
+    assert await policy.authorize("dangerous", "write", {}) is allowed
 
 
 @pytest.mark.asyncio

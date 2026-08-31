@@ -7,6 +7,7 @@ import pytest
 from nano_vibe.agent.loop import LoopStatus
 from nano_vibe.config import load_config
 from nano_vibe.models.base import ModelResponse
+from nano_vibe.permissions import ApprovalDecision
 from nano_vibe.session import Session
 from nano_vibe.session_store import SessionStore
 from nano_vibe.tools.shell import ShellTool
@@ -117,3 +118,34 @@ async def test_session_resume_restores_history_and_counters(tmp_path: Path) -> N
     assert resumed.session_id == "session-1"
     assert resumed.loop.history == original.loop.history
     assert resumed.loop._turns == original.loop._turns
+
+
+@pytest.mark.asyncio
+async def test_session_resume_restores_tool_specific_session_grants(tmp_path: Path) -> None:
+    store = SessionStore(tmp_path / "sessions")
+    original = Session(
+        PlainModel(),
+        tmp_path,
+        session_id="session-1",
+        session_store=store,
+        permission_approve=lambda _name, _arguments: ApprovalDecision.SESSION,
+    )
+    policy = original.registry.permission_policy
+    assert policy is not None
+    assert await policy.authorize("apply_patch", "write", {}) is True
+    original.save_snapshot()
+
+    approvals: list[str] = []
+    resumed = Session.resume(
+        PlainModel(),
+        tmp_path,
+        "session-1",
+        session_store=store,
+        permission_approve=lambda name, _arguments: approvals.append(name) or False,
+    )
+    resumed_policy = resumed.registry.permission_policy
+    assert resumed_policy is not None
+
+    assert await resumed_policy.authorize("apply_patch", "write", {}) is True
+    assert await resumed_policy.authorize("shell", "shell", {}) is False
+    assert approvals == ["shell"]

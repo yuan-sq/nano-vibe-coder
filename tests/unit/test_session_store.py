@@ -24,6 +24,7 @@ def test_session_store_round_trips_json_snapshot(tmp_path: Path) -> None:
         turns=2,
         tool_errors=0,
         idempotency_records={"shell:call-1": {"result": {"ok": True}}},
+        session_grants=["apply_patch"],
         runtime_state="AWAITING_APPROVAL",
         pending_interaction={"interaction_id": "a-1", "kind": "approval"},
     )
@@ -37,6 +38,13 @@ def test_session_store_round_trips_json_snapshot(tmp_path: Path) -> None:
     assert loaded["history"] == snapshot.history
     assert loaded.runtime_state == "AWAITING_APPROVAL"
     assert loaded.pending_interaction == {"interaction_id": "a-1", "kind": "approval"}
+    assert loaded.session_grants == ["apply_patch"]
+
+
+def test_session_snapshot_defaults_missing_session_grants_for_compatibility() -> None:
+    snapshot = SessionSnapshot.from_dict({"session_id": "legacy"})
+
+    assert snapshot.session_grants == []
 
 
 def test_session_snapshot_redacts_sensitive_mapping_keys() -> None:

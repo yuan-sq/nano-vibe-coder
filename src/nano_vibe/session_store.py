@@ -54,6 +54,7 @@ class SessionSnapshot:
     turns: int = 0
     tool_errors: int = 0
     idempotency_records: dict[str, dict[str, Any]] = field(default_factory=dict)
+    session_grants: list[str] = field(default_factory=list)
     loaded_skills: list[str] = field(default_factory=list)
     runtime_state: str = "IDLE"
     pending_interaction: dict[str, Any] | None = None
@@ -77,6 +78,7 @@ class SessionSnapshot:
                 str(key): _redact_value("record", dict(value))
                 for key, value in self.idempotency_records.items()
             },
+            "session_grants": list(self.session_grants),
             "loaded_skills": list(self.loaded_skills),
             "runtime_state": self.runtime_state,
             "pending_interaction": (
@@ -103,6 +105,7 @@ class SessionSnapshot:
         plan = value.get("plan", [])
         history = value.get("history", [])
         records = value.get("idempotency_records", {})
+        session_grants = value.get("session_grants", [])
         loaded_skills = value.get("loaded_skills", [])
         runtime_state = value.get("runtime_state", "IDLE")
         pending_interaction = value.get("pending_interaction")
@@ -110,7 +113,11 @@ class SessionSnapshot:
         summary = value.get("summary")
         if not isinstance(plan, list) or not isinstance(history, list):
             raise SessionStoreError("session snapshot plan and history must be arrays")
-        if not isinstance(records, Mapping) or not isinstance(loaded_skills, list):
+        if (
+            not isinstance(records, Mapping)
+            or not isinstance(loaded_skills, list)
+            or not isinstance(session_grants, list)
+        ):
             raise SessionStoreError("session snapshot has invalid persisted records")
         if not isinstance(runtime_state, str):
             raise SessionStoreError("session snapshot runtime_state must be a string")
@@ -124,6 +131,8 @@ class SessionSnapshot:
             raise SessionStoreError("session snapshot plan and history items must be objects")
         if any(not isinstance(item, str) for item in loaded_skills):
             raise SessionStoreError("session snapshot loaded_skills must contain strings")
+        if any(not isinstance(item, str) for item in session_grants):
+            raise SessionStoreError("session snapshot session_grants must contain strings")
         if any(not isinstance(item, Mapping) for item in records.values()):
             raise SessionStoreError("session snapshot idempotency records must be objects")
         return cls(
@@ -143,6 +152,7 @@ class SessionSnapshot:
                 for key, item in records.items()
                 if isinstance(item, Mapping)
             },
+            session_grants=[str(item) for item in session_grants if isinstance(item, str)],
             loaded_skills=[str(item) for item in loaded_skills if isinstance(item, str)],
             runtime_state=runtime_state,
             pending_interaction=(

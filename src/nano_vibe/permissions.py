@@ -9,9 +9,9 @@ state-machine permissions.
 from __future__ import annotations
 
 import inspect
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from enum import Enum
-from typing import Any
+from typing import Any, TypeAlias
 
 from nano_vibe.tools.base import ToolError
 
@@ -30,7 +30,22 @@ class PermissionMode(str, Enum):
             raise ValueError("permission mode must be 'normal' or 'full-access'") from exc
 
 
-ApprovalCallback = Callable[[str, Any], bool | Awaitable[bool]]
+class ApprovalDecision(str, Enum):
+    ONCE = "once"
+    SESSION = "session"
+    DENY = "deny"
+
+    @classmethod
+    def parse(cls, value: ApprovalDecision | str | bool) -> ApprovalDecision:
+        if isinstance(value, bool):
+            return cls.ONCE if value else cls.DENY
+        if isinstance(value, cls):
+            return value
+        return cls(value)
+
+
+ApprovalResult: TypeAlias = ApprovalDecision | str | bool
+ApprovalCallback = Callable[[str, Any], ApprovalResult | Awaitable[ApprovalResult]]
 
 
 class PermissionPolicy:
@@ -43,9 +58,18 @@ class PermissionPolicy:
         mode: PermissionMode | str = PermissionMode.NORMAL,
         *,
         approve: ApprovalCallback | None = None,
+        session_grants: set[str] | None = None,
     ) -> None:
         self.mode = PermissionMode.parse(mode)
         self.approve = approve
+        self._session_grants = set(session_grants or ())
+
+    @property
+    def session_grants(self) -> set[str]:
+        return set(self._session_grants)
+
+    def restore_session_grants(self, tool_names: Iterable[str]) -> None:
+        self._session_grants = {str(name) for name in tool_names}
 
     def requires_approval(self, scope: str) -> bool:
         return self.mode is PermissionMode.NORMAL and scope in self.restricted_scopes
@@ -54,6 +78,8 @@ class PermissionPolicy:
         self, tool_name: str, scope: str, arguments: Mapping[str, Any]
     ) -> ToolError | None:
         if not self.requires_approval(scope):
+            return None
+        if tool_name in self._session_grants:
             return None
         if self.approve is None:
             return ToolError(
@@ -66,6 +92,7 @@ class PermissionPolicy:
             approved = self.approve(tool_name, arguments)
             if inspect.isawaitable(approved):
                 approved = await approved
+            decision = ApprovalDecision.parse(approved)
         except Exception as exc:  # noqa: BLE001 - approval callbacks are user integrations
             return ToolError(
                 code="permission_approval_error",
@@ -73,13 +100,15 @@ class PermissionPolicy:
                 details={"tool": tool_name, "scope": scope},
                 retryable=True,
             )
-        if not approved:
+        if decision is ApprovalDecision.DENY:
             return ToolError(
                 code="permission_denied",
                 message=f"permission denied for tool: {tool_name}",
                 details={"tool": tool_name, "scope": scope, "mode": self.mode.value},
                 retryable=False,
             )
+        if decision is ApprovalDecision.SESSION:
+            self._session_grants.add(tool_name)
         return None
 
     async def authorize(

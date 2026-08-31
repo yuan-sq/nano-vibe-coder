@@ -134,6 +134,7 @@ class Session:
             self.save_snapshot()
 
     def snapshot(self) -> SessionSnapshot:
+        permission_policy = self.registry.permission_policy
         return SessionSnapshot(
             session_id=self.session_id,
             workspace=str(self.workspace),
@@ -146,6 +147,9 @@ class Session:
             turns=self.loop._turns,
             tool_errors=self.loop._tool_errors,
             idempotency_records=self.registry.idempotency_records,
+            session_grants=(
+                sorted(permission_policy.session_grants) if permission_policy is not None else []
+            ),
             loaded_skills=self.skill_manager.loaded_names,
             runtime_state=self.runtime_state,
             pending_interaction=(dict(self.pending_interaction) if self.pending_interaction else None),
@@ -172,6 +176,8 @@ class Session:
         self.loop._turns = snapshot.turns
         self.loop._tool_errors = snapshot.tool_errors
         self.registry.restore_idempotency(snapshot.idempotency_records)
+        if self.registry.permission_policy is not None:
+            self.registry.permission_policy.restore_session_grants(snapshot.session_grants)
         self.skill_manager.restore(snapshot.loaded_skills)
         self.runtime_state = snapshot.runtime_state
         self.pending_interaction = (

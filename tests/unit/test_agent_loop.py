@@ -33,7 +33,7 @@ class CompactingModel(ScriptedModel):
     async def complete(
         self, messages: Sequence[Mapping[str, Any]], tools: Sequence[Mapping[str, Any]]
     ) -> ModelResponse:
-        if not tools and messages and "Summarize" in str(messages[0].get("content", "")):
+        if not tools and messages and "总结" in str(messages[0].get("content", "")):
             self.summary_calls += 1
             return ModelResponse(content="A compact handoff")
         return await super().complete(messages, tools)

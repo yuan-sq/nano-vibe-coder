@@ -280,7 +280,7 @@ class AgentLoop:
                 "role": "system",
                 "content": self._load_prompt(
                     "compact.md",
-                    "Summarize older context into a concise handoff with decisions, failures, and next steps.",
+                    "将较早的上下文总结成简洁的交接记录，保留决策、失败情况和后续步骤。",
                 ),
             }
             response = await self._complete([prompt, *older], [])
@@ -298,12 +298,12 @@ class AgentLoop:
 
     def _stage_prompt(self) -> str:
         content = self._load_prompt(
-            "stages.md", f"You are in the {self.machine.current.value} stage."
+            "stages.md", f"你当前处于 {self.machine.current.value} 阶段。"
         )
         for line in content.splitlines():
             if line.startswith(f"{self.machine.current.value}:"):
                 return line.split(":", 1)[1].strip()
-        return f"You are in the {self.machine.current.value} stage."
+        return f"你当前处于 {self.machine.current.value} 阶段。"
 
     def _load_prompt(self, filename: str, fallback: str) -> str:
         path = Path(__file__).resolve().parents[1] / "prompts" / filename

@@ -1,1 +1,1 @@
-"""Prompt templates bundled with the application."""
+"""应用内置的提示词模板。"""

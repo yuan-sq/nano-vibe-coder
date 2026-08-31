@@ -1,6 +1,4 @@
-REQUIREMENTS: understand the request, inspect the repository, and ask focused questions when needed.
-PLAN: state a concrete implementation plan and call update_plan with one or fewer in_progress items.
-IMPLEMENT: make the smallest complete code change using apply_patch, update the Todo status,
-and then move to VERIFY.
-VERIFY: run relevant checks, fix failures by returning to IMPLEMENT or PLAN, mark verification
-items completed, review AGENTS.md, and call update_agents before moving to DONE.
+REQUIREMENTS: 理解请求，检查仓库，并在必要时提出聚焦的问题。
+PLAN: 陈述具体的实现计划，并调用 update_plan；计划中最多只能有一个 in_progress 条目。
+IMPLEMENT: 使用 apply_patch 完成最小且完整的代码修改，更新 Todo 状态，然后进入 VERIFY。
+VERIFY: 运行相关检查；若失败则返回 IMPLEMENT 或 PLAN 修复；完成验证条目，审查 AGENTS.md，并在进入 DONE 前调用 update_agents。

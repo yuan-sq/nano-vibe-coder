@@ -1,2 +1,1 @@
-Summarize older coding-agent context into a concise handoff. Keep decisions, constraints,
-edits, failures, verification results, and next steps. Do not include secrets or chat filler.
+将较早的编码 Agent 上下文总结成简洁的交接记录。保留决策、约束、修改、失败情况、验证结果和后续步骤。不要包含密钥或聊天废话。

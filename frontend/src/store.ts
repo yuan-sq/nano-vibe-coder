@@ -41,9 +41,11 @@ export const useGuiStore = create<GuiStore>((set) => ({
       const message = item as Record<string, unknown>;
       const role = message.role;
       if (role !== "user" && role !== "assistant" && role !== "tool") return [];
+      const content = String(message.content ?? "");
+      if (role === "assistant" && !content.trim()) return [];
       return [{
         role: role as ChatMessage["role"],
-        content: String(message.content ?? ""),
+        content,
         tool: typeof message.name === "string" ? message.name : undefined,
         toolCallId: typeof message.tool_call_id === "string" ? message.tool_call_id : undefined,
         arguments: message.arguments && typeof message.arguments === "object" && !Array.isArray(message.arguments)

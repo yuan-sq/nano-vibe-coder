@@ -37,9 +37,10 @@ function ToolMessage({ message }: { message: ChatMessage }) {
 }
 
 export function MessageList({ messages }: { messages: ChatMessage[] }) {
+  const visibleMessages = messages.filter((message) => message.role !== "assistant" || message.content.trim());
   return <div className="message-list">
-    {messages.length === 0 && <div className="empty-state">发送一个任务开始工作</div>}
-    {messages.map((message, index) => {
+    {visibleMessages.length === 0 && <div className="empty-state">发送一个任务开始工作</div>}
+    {visibleMessages.map((message, index) => {
       const key = `${message.toolCallId ?? message.role}-${index}`;
       if (message.role === "tool") {
         return <ToolMessage key={key} message={message} />;

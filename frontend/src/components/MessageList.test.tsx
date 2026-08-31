@@ -39,6 +39,17 @@ describe("MessageList", () => {
     expect(screen.getByText("代码").tagName).toBe("CODE");
   });
 
+  it("hides assistant messages with empty or whitespace-only content", () => {
+    const { container } = render(<MessageList messages={[
+      { role: "assistant", content: "" },
+      { role: "assistant", content: "   " },
+      { role: "assistant", content: "可见说明" }
+    ]} />);
+
+    expect(container.querySelectorAll(".message-label")).toHaveLength(1);
+    expect(screen.getByText("可见说明")).toBeInTheDocument();
+  });
+
   it("supports GFM blocks without creating raw HTML or unsafe links", () => {
     const { container } = render(<MarkdownContent content={"```ts\nconst value = 1;\n```\n\n| 名称 | 值 |\n| --- | --- |\n| A | 1 |\n\n[危险](javascript:alert(1))"} />);
 

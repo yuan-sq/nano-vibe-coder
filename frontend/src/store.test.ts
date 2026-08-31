@@ -38,6 +38,24 @@ describe("GUI store", () => {
     expect(runtime.pendingInteraction?.interaction_id).toBe("q-1");
   });
 
+  it("omits empty assistant tool-call placeholders when hydrating history", () => {
+    useGuiStore.getState().reset();
+    useGuiStore.getState().hydrate("session-1", {
+      history: [
+        { role: "user", content: "继续" },
+        { role: "assistant", content: null, tool_calls: [{ id: "call-1" }] },
+        { role: "tool", name: "shell", tool_call_id: "call-1", content: "clean" },
+        { role: "assistant", content: "已完成" }
+      ]
+    });
+
+    expect(useGuiStore.getState().runtimes["session-1"].messages).toEqual([
+      { role: "user", content: "继续" },
+      { role: "tool", content: "clean", tool: "shell", toolCallId: "call-1", status: "completed" },
+      { role: "assistant", content: "已完成" }
+    ]);
+  });
+
   it("records the latest sequence after a resync", () => {
     useGuiStore.getState().reset();
     useGuiStore.getState().hydrate("session-1", { runtime_state: "IDLE", history: [] });

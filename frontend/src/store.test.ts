@@ -44,14 +44,14 @@ describe("GUI store", () => {
       history: [
         { role: "user", content: "继续" },
         { role: "assistant", content: null, tool_calls: [{ id: "call-1" }] },
-        { role: "tool", name: "shell", tool_call_id: "call-1", content: "clean" },
+        { role: "tool", name: "shell", tool_call_id: "call-1", content: "" },
         { role: "assistant", content: "已完成" }
       ]
     });
 
     expect(useGuiStore.getState().runtimes["session-1"].messages).toEqual([
       { role: "user", content: "继续" },
-      { role: "tool", content: "clean", tool: "shell", toolCallId: "call-1", status: "completed" },
+      { role: "tool", content: "", tool: "shell", toolCallId: "call-1", status: "completed" },
       { role: "assistant", content: "已完成" }
     ]);
   });

@@ -43,11 +43,13 @@ describe("MessageList", () => {
     const { container } = render(<MessageList messages={[
       { role: "assistant", content: "" },
       { role: "assistant", content: "   " },
-      { role: "assistant", content: "可见说明" }
+      { role: "assistant", content: "可见说明" },
+      { role: "tool", tool: "shell", content: "" }
     ]} />);
 
-    expect(container.querySelectorAll(".message-label")).toHaveLength(1);
+    expect(container.querySelectorAll(".message.assistant .message-label")).toHaveLength(1);
     expect(screen.getByText("可见说明")).toBeInTheDocument();
+    expect(screen.getByText("已运行 shell")).toBeInTheDocument();
   });
 
   it("supports GFM blocks without creating raw HTML or unsafe links", () => {

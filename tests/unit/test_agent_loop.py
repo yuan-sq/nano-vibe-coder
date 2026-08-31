@@ -215,11 +215,11 @@ async def test_agent_loop_retries_tool_call_without_explanation(tmp_path: Path) 
     model = ScriptedModel(
         [
             ModelResponse(
-                tool_calls=[ToolCall("call-1", "transition_state", {"target_state": "PLAN"})]
+                tool_calls=[ToolCall("rejected-call", "transition_state", {"target_state": "PLAN"})]
             ),
             ModelResponse(
                 content="I will move into planning.",
-                tool_calls=[ToolCall("call-1", "transition_state", {"target_state": "PLAN"})],
+                tool_calls=[ToolCall("accepted-call", "transition_state", {"target_state": "PLAN"})],
             ),
             ModelResponse(content="The planning state is ready."),
         ]
@@ -227,11 +227,13 @@ async def test_agent_loop_retries_tool_call_without_explanation(tmp_path: Path) 
     machine = StateMachine()
     registry = ToolRegistry([TransitionTool(machine)])
     events: list[tuple[str, dict[str, Any]]] = []
+    executed_tools: list[str] = []
     loop = AgentLoop(
         model,
         registry,
         machine,
         tmp_path,
+        on_tool=lambda name, _arguments: executed_tools.append(name),
         on_event=lambda name, payload: events.append((name, payload)),
     )
 
@@ -240,11 +242,24 @@ async def test_agent_loop_retries_tool_call_without_explanation(tmp_path: Path) 
     assert result.message == "The planning state is ready."
     assert machine.current is AgentState.PLAN
     assert len(model.requests) == 3
-    assert sum(1 for event, _payload in events if event == "tool_started") == 1
+    tool_started = [payload for event, payload in events if event == "tool_started"]
+    assert len(tool_started) == 1
+    assert tool_started[0]["tool_call_id"] == "accepted-call"
+    assert executed_tools == ["transition_state"]
     assert not any(
         message.get("role") == "assistant" and not str(message.get("content") or "").strip()
         for message in loop.history
     )
+    assistant_tool_call_ids = [
+        call["id"]
+        for message in loop.history
+        if message.get("role") == "assistant"
+        for call in message.get("tool_calls", [])
+    ]
+    assert assistant_tool_call_ids == ["accepted-call"]
+    assert "rejected-call" not in assistant_tool_call_ids
+    tool_history = next(message for message in loop.history if message.get("role") == "tool")
+    assert tool_history["tool_call_id"] == "accepted-call"
     retry_payload = next(payload for event, payload in events if event == "model_explanation_retry")
     assert retry_payload == {
         "attempt": 1,
@@ -258,24 +273,34 @@ async def test_agent_loop_retries_tool_call_without_explanation(tmp_path: Path) 
 
 @pytest.mark.asyncio
 async def test_agent_loop_falls_back_after_three_explanation_retries(tmp_path: Path) -> None:
-    tool_call = ToolCall("call-1", "transition_state", {"target_state": "PLAN"})
     model = ScriptedModel(
         [
-            ModelResponse(tool_calls=[tool_call]),
-            ModelResponse(tool_calls=[tool_call]),
-            ModelResponse(tool_calls=[tool_call]),
-            ModelResponse(content="   ", tool_calls=[tool_call]),
+            ModelResponse(
+                tool_calls=[ToolCall("rejected-call-1", "transition_state", {"target_state": "PLAN"})]
+            ),
+            ModelResponse(
+                tool_calls=[ToolCall("rejected-call-2", "transition_state", {"target_state": "PLAN"})]
+            ),
+            ModelResponse(
+                tool_calls=[ToolCall("rejected-call-3", "transition_state", {"target_state": "PLAN"})]
+            ),
+            ModelResponse(
+                content="   ",
+                tool_calls=[ToolCall("accepted-fallback-call", "transition_state", {"target_state": "PLAN"})],
+            ),
             ModelResponse(content="The planning state is ready."),
         ]
     )
     machine = StateMachine()
     registry = ToolRegistry([TransitionTool(machine)])
     events: list[tuple[str, dict[str, Any]]] = []
+    executed_tools: list[str] = []
     loop = AgentLoop(
         model,
         registry,
         machine,
         tmp_path,
+        on_tool=lambda name, _arguments: executed_tools.append(name),
         on_event=lambda name, payload: events.append((name, payload)),
     )
 
@@ -284,8 +309,29 @@ async def test_agent_loop_falls_back_after_three_explanation_retries(tmp_path: P
     assert result.message == "The planning state is ready."
     assert machine.current is AgentState.PLAN
     assert len(model.requests) == 5
-    assert sum(1 for event, _payload in events if event == "tool_started") == 1
+    tool_started = [payload for event, payload in events if event == "tool_started"]
+    assert len(tool_started) == 1
+    assert tool_started[0]["tool_call_id"] == "accepted-fallback-call"
+    assert executed_tools == ["transition_state"]
+    assistant_tool_call_ids = [
+        call["id"]
+        for message in loop.history
+        if message.get("role") == "assistant"
+        for call in message.get("tool_calls", [])
+    ]
+    assert assistant_tool_call_ids == ["accepted-fallback-call"]
+    assert not {"rejected-call-1", "rejected-call-2", "rejected-call-3"}.intersection(assistant_tool_call_ids)
+    tool_history = next(message for message in loop.history if message.get("role") == "tool")
+    assert tool_history["tool_call_id"] == "accepted-fallback-call"
     retries = [payload for event, payload in events if event == "model_explanation_retry"]
     assert len(retries) == 3
+    for request in model.requests[1:4]:
+        assert request[0][-1]["role"] == "system"
+        corrections = [
+            message
+            for message in request[0]
+            if str(message.get("content", "")).startswith("Your previous response contained only tool calls")
+        ]
+        assert len(corrections) == 1
     fallback_payload = next(payload for event, payload in events if event == "model_explanation_fallback")
     assert fallback_payload == {"attempts": 4, "tool_names": ["transition_state"]}

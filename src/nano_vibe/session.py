@@ -125,6 +125,8 @@ class Session:
             skill_manager=self.skill_manager,
             on_checkpoint=self.save_snapshot,
         )
+        if self.registry.permission_policy is not None:
+            self.registry.permission_policy.set_session_grant_callback(self.save_snapshot)
 
     async def handle_input(self, text: str) -> LoopResult:
         self.save_snapshot()
@@ -165,6 +167,14 @@ class Session:
             raise SessionStoreError(
                 f"session workspace does not match current workspace: {snapshot.workspace}"
             )
+        try:
+            self.permission_mode = PermissionMode.parse(snapshot.permission_mode)
+        except ValueError as exc:
+            raise SessionStoreError(
+                f"invalid permission mode in session snapshot: {snapshot.permission_mode}"
+            ) from exc
+        if self.registry.permission_policy is not None:
+            self.registry.permission_policy.mode = self.permission_mode
         try:
             self.machine.current = type(self.machine.current)(snapshot.state)
         except ValueError as exc:

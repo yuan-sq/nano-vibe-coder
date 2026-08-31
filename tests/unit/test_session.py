@@ -7,9 +7,9 @@ import pytest
 from nano_vibe.agent.loop import LoopStatus
 from nano_vibe.config import load_config
 from nano_vibe.models.base import ModelResponse
-from nano_vibe.permissions import ApprovalDecision
+from nano_vibe.permissions import ApprovalDecision, PermissionMode
 from nano_vibe.session import Session
-from nano_vibe.session_store import SessionStore
+from nano_vibe.session_store import SessionSnapshot, SessionStore
 from nano_vibe.tools.shell import ShellTool
 from nano_vibe.tools.web_search import WebSearchTool
 
@@ -149,3 +149,30 @@ async def test_session_resume_restores_tool_specific_session_grants(tmp_path: Pa
     assert await resumed_policy.authorize("apply_patch", "write", {}) is True
     assert await resumed_policy.authorize("shell", "shell", {}) is False
     assert approvals == ["shell"]
+
+
+@pytest.mark.parametrize(
+    ("configured_mode", "snapshot_mode"),
+    [
+        (PermissionMode.FULL_ACCESS, PermissionMode.NORMAL),
+        (PermissionMode.NORMAL, PermissionMode.FULL_ACCESS),
+    ],
+)
+def test_restore_snapshot_restores_immutable_session_permission_mode(
+    tmp_path: Path,
+    configured_mode: PermissionMode,
+    snapshot_mode: PermissionMode,
+) -> None:
+    session = Session(PlainModel(), tmp_path, permission_mode=configured_mode)
+
+    session.restore_snapshot(
+        SessionSnapshot(
+            session_id=session.session_id,
+            workspace=str(tmp_path.resolve()),
+            permission_mode=snapshot_mode.value,
+        )
+    )
+
+    assert session.permission_mode is snapshot_mode
+    assert session.registry.permission_policy is not None
+    assert session.registry.permission_policy.mode is snapshot_mode

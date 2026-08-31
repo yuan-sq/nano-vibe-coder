@@ -46,6 +46,7 @@ class ApprovalDecision(str, Enum):
 
 ApprovalResult: TypeAlias = ApprovalDecision | str | bool
 ApprovalCallback = Callable[[str, Any], ApprovalResult | Awaitable[ApprovalResult]]
+SessionGrantCallback = Callable[[], Any | Awaitable[Any]]
 
 
 class PermissionPolicy:
@@ -59,10 +60,12 @@ class PermissionPolicy:
         *,
         approve: ApprovalCallback | None = None,
         session_grants: set[str] | None = None,
+        on_session_grant: SessionGrantCallback | None = None,
     ) -> None:
         self.mode = PermissionMode.parse(mode)
         self.approve = approve
         self._session_grants = set(session_grants or ())
+        self._on_session_grant = on_session_grant
 
     @property
     def session_grants(self) -> set[str]:
@@ -70,6 +73,9 @@ class PermissionPolicy:
 
     def restore_session_grants(self, tool_names: Iterable[str]) -> None:
         self._session_grants = {str(name) for name in tool_names}
+
+    def set_session_grant_callback(self, callback: SessionGrantCallback | None) -> None:
+        self._on_session_grant = callback
 
     def requires_approval(self, scope: str) -> bool:
         return self.mode is PermissionMode.NORMAL and scope in self.restricted_scopes
@@ -109,6 +115,19 @@ class PermissionPolicy:
             )
         if decision is ApprovalDecision.SESSION:
             self._session_grants.add(tool_name)
+            try:
+                if self._on_session_grant is not None:
+                    persisted = self._on_session_grant()
+                    if inspect.isawaitable(persisted):
+                        await persisted
+            except Exception as exc:  # noqa: BLE001 - persistence is an integration boundary
+                self._session_grants.discard(tool_name)
+                return ToolError(
+                    code="permission_persistence_error",
+                    message=str(exc) or "could not persist session permission",
+                    details={"tool": tool_name, "scope": scope},
+                    retryable=True,
+                )
         return None
 
     async def authorize(

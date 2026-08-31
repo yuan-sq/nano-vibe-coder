@@ -13,6 +13,12 @@ from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
 
+TOOL_EXPLANATION_INSTRUCTION = (
+    "Before calling this tool, include a brief user-facing explanation "
+    "in the assistant content."
+)
+
+
 @dataclass(frozen=True)
 class ToolError:
     """Serializable error information returned by a tool."""
@@ -136,7 +142,7 @@ class Tool:
             "type": "function",
             "function": {
                 "name": self.name,
-                "description": self.description,
+                "description": f"{self.description} {TOOL_EXPLANATION_INSTRUCTION}",
                 "parameters": dict(self.parameters),
             },
         }

@@ -26,6 +26,9 @@ async def test_registry_filters_tools_and_executes_structured_result() -> None:
 
     assert registry.names() == {"echo"}
     assert registry.definitions({"echo"})[0]["function"]["name"] == "echo"
+    description = registry.definitions({"echo"})[0]["function"]["description"]
+    assert "user-facing explanation" in description
+    assert "assistant content" in description
     result = await registry.execute("echo", {"value": "hello"}, {"echo"})
 
     assert result.ok is True

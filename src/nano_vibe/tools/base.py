@@ -12,7 +12,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
-
 TOOL_EXPLANATION_INSTRUCTION = (
     "Before calling this tool, include a brief user-facing explanation "
     "in the assistant content."

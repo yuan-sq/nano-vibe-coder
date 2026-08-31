@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { RuntimeView } from "../lib/protocol";
 
 type Tab = "plan" | "diff" | "trace";
@@ -12,5 +13,6 @@ export function RightPanel({ tab, onTab, runtime, diff, trace }: { tab: Tab; onT
 }
 
 export function ShellPanel({ runtime }: { runtime: RuntimeView | undefined }) {
-  return <section className="shell-panel"><div className="shell-title">Shell 输出 <span>只读</span></div><pre>{runtime?.shell.map((chunk) => `[${chunk.stream}] ${chunk.text}`).join("") || "暂无输出"}</pre></section>;
+  const [expanded, setExpanded] = useState(true);
+  return <section className="shell-panel"><details open={expanded} onToggle={(event) => setExpanded(event.currentTarget.open)}><summary className="shell-title">Shell 输出 <span>只读</span></summary><pre>{runtime?.shell.map((chunk) => `[${chunk.stream}] ${chunk.text}`).join("") || "暂无输出"}</pre></details></section>;
 }

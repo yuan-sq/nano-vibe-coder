@@ -48,6 +48,11 @@ Tavily 使用显式配置的 `[tavily].env_file` 读取 `TAVILY_API_KEY`。Searc
 NANO_VIBE_LIVE_TAVILY=1 uv run pytest tests/integration/test_tavily_live.py -q
 ```
 
+如果 GUI 中提示 Tavily 未配置，请把 `TAVILY_API_KEY=...` 写入所选项目根目录下
+的 env 文件（默认是 `<项目路径>/.env`），或在启动 GUI 的进程环境中设置同名变量，
+然后重启 GUI。`[tavily].env_file` 可以在根目录 `config.toml` 中改为相对所选项目
+的路径或绝对路径；程序不会自动搜索其他目录中的 `.env`。
+
 ## 开发检查
 
 ```bash

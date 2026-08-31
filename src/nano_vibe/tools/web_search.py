@@ -73,7 +73,7 @@ class _TavilyTool(Tool):
         key = self.api_key or os.environ.get("TAVILY_API_KEY") or file_values.get("TAVILY_API_KEY")
         if not key:
             return None, ToolResult.failure(
-                "web search is not implemented in v1; configure Tavily with an explicit env_file",
+                f"Tavily web search is not configured: set TAVILY_API_KEY in {self.env_file} or in the process environment",
                 code="tavily_not_configured",
                 details={"env_file": str(self.env_file)},
             )

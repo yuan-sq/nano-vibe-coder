@@ -1,6 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { InteractionCard } from "./MessageList";
+import { InteractionCard, MessageList } from "./MessageList";
+import { MarkdownContent } from "./MarkdownContent";
+import { ShellPanel } from "./RightPanel";
 
 describe("InteractionCard", () => {
   it("renders user requests as answer controls instead of permission buttons", () => {
@@ -25,5 +27,46 @@ describe("InteractionCard", () => {
     fireEvent.change(screen.getByPlaceholderText("输入你的回答"), { target: { value: "广州" } });
     fireEvent.click(screen.getByRole("button", { name: "提交回答" }));
     expect(onResolve).toHaveBeenCalledWith("广州");
+  });
+});
+
+describe("MessageList", () => {
+  it("renders common assistant markdown as semantic elements", () => {
+    render(<MessageList messages={[{ role: "assistant", content: "# 标题\n\n**重点** 和 `代码`" }]} />);
+
+    expect(screen.getByRole("heading", { name: "标题" })).toBeInTheDocument();
+    expect(screen.getByText("重点").tagName).toBe("STRONG");
+    expect(screen.getByText("代码").tagName).toBe("CODE");
+  });
+
+  it("supports GFM blocks without creating raw HTML or unsafe links", () => {
+    const { container } = render(<MarkdownContent content={"```ts\nconst value = 1;\n```\n\n| 名称 | 值 |\n| --- | --- |\n| A | 1 |\n\n[危险](javascript:alert(1))"} />);
+
+    expect(container.querySelector("pre code")).toHaveTextContent("const value = 1;");
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    expect(container.querySelector("script")).toBeNull();
+    expect(container.querySelector("a")).not.toHaveAttribute("href", "javascript:alert(1)");
+  });
+
+  it("keeps tool output visible and lets the user collapse it", () => {
+    const { rerender } = render(<MessageList messages={[{ role: "tool", tool: "web_search", content: "结果" }]} />);
+
+    const details = screen.getByText("工具 · web_search").closest("details");
+    expect(details).not.toBeNull();
+    expect(details).toHaveAttribute("open");
+    fireEvent.click(screen.getByText("工具 · web_search"));
+    expect(details).not.toHaveAttribute("open");
+    rerender(<MessageList messages={[{ role: "tool", tool: "web_search", content: "新结果" }]} />);
+    expect(screen.getByText("工具 · web_search").closest("details")).not.toHaveAttribute("open");
+  });
+
+  it("lets the user collapse the shell output panel", () => {
+    render(<ShellPanel runtime={{ sessionId: "s", runId: null, runtimeState: "IDLE", messages: [], pendingInteraction: null, plan: [], shell: [{ stream: "stdout", text: "ok" }], lastSeq: 0 }} />);
+
+    const details = screen.getByText("Shell 输出").closest("details");
+    expect(details).not.toBeNull();
+    expect(details).toHaveAttribute("open");
+    fireEvent.click(screen.getByText("Shell 输出"));
+    expect(details).not.toHaveAttribute("open");
   });
 });

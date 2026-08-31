@@ -73,7 +73,11 @@ async def test_tavily_requires_explicit_env_file_when_client_not_injected(tmp_pa
 
     assert result.ok is False
     assert result.error is not None
-    assert result.error.code in {"tavily_not_configured", "tavily_dependency_missing"}
+    if result.error.code == "tavily_not_configured":
+        assert "TAVILY_API_KEY" in result.output
+        assert str(tmp_path / "missing.env") in result.output
+    else:
+        assert result.error.code == "tavily_dependency_missing"
 
 
 @pytest.mark.asyncio

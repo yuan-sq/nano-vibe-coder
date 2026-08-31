@@ -1,14 +1,29 @@
 import { useState } from "react";
 import type { ChatMessage } from "../lib/protocol";
 import type { PendingInteraction } from "../lib/protocol";
+import { MarkdownContent } from "./MarkdownContent";
+
+function ToolMessage({ message }: { message: ChatMessage }) {
+  const [expanded, setExpanded] = useState(true);
+  return <details className="message tool" open={expanded} onToggle={(event) => setExpanded(event.currentTarget.open)}>
+    <summary className="message-label">工具 · {message.tool ?? "tool"}</summary>
+    <pre>{message.content}</pre>
+  </details>;
+}
 
 export function MessageList({ messages }: { messages: ChatMessage[] }) {
   return <div className="message-list">
     {messages.length === 0 && <div className="empty-state">发送一个任务开始工作</div>}
-    {messages.map((message, index) => <article className={`message ${message.role}`} key={`${message.toolCallId ?? message.role}-${index}`}>
-      <div className="message-label">{message.role === "user" ? "你" : message.role === "tool" ? `工具 · ${message.tool}` : "Agent"}</div>
-      <pre>{message.content}</pre>
-    </article>)}
+    {messages.map((message, index) => {
+      const key = `${message.toolCallId ?? message.role}-${index}`;
+      if (message.role === "tool") {
+        return <ToolMessage key={key} message={message} />;
+      }
+      return <article className={`message ${message.role}`} key={key}>
+        <div className="message-label">{message.role === "user" ? "你" : "Agent"}</div>
+        <MarkdownContent content={message.content} />
+      </article>;
+    })}
   </div>;
 }
 

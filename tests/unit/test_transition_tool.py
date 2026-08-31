@@ -24,8 +24,9 @@ async def test_transition_tool_returns_invalid_transition_as_failure() -> None:
 
 
 @pytest.mark.asyncio
-async def test_web_search_is_an_explicit_placeholder() -> None:
+async def test_web_search_reports_missing_tavily_configuration() -> None:
     result = await WebSearchTool().execute({"query": "python"})
 
     assert result.ok is False
-    assert "not implemented" in result.output.lower()
+    assert result.error is not None
+    assert result.error.code in {"tavily_not_configured", "tavily_dependency_missing"}

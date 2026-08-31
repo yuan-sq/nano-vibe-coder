@@ -146,6 +146,7 @@ class AgentLoop:
                         "role": "tool",
                         "tool_call_id": call.id,
                         "name": call.name,
+                        "arguments": call.arguments,
                         "content": result.output,
                         **({"tool_error": result.error.to_dict()} if result.error else {}),
                     }
@@ -172,7 +173,15 @@ class AgentLoop:
     async def _execute_tool(self, call: ToolCall) -> ToolResult:
         if self.on_tool is not None:
             self.on_tool(call.name, call.arguments)
-        await self._emit_event("tool_started", {"tool": call.name, "arguments": call.arguments, "tool_call_id": call.id})
+        await self._emit_event(
+            "tool_started",
+            {
+                "tool": call.name,
+                "arguments": call.arguments,
+                "tool_call_id": call.id,
+                "state": self.machine.current.value,
+            },
+        )
         if call.parse_error:
             result = ToolResult.failure(f"Could not parse tool arguments: {call.parse_error}")
         else:
@@ -194,7 +203,12 @@ class AgentLoop:
         )
         await self._emit_event(
             "tool_finished",
-            {"tool": call.name, "tool_call_id": call.id, **result.to_dict()},
+            {
+                "tool": call.name,
+                "tool_call_id": call.id,
+                "state": self.machine.current.value,
+                **result.to_dict(),
+            },
         )
         return result
 

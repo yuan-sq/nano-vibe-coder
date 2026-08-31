@@ -48,20 +48,27 @@ describe("MessageList", () => {
     expect(container.querySelector("a")).not.toHaveAttribute("href", "javascript:alert(1)");
   });
 
-  it("keeps tool output visible and lets the user collapse it", () => {
+  it("shows a collapsed one-line tool summary with arguments", () => {
     const { rerender } = render(<MessageList messages={[{ role: "tool", tool: "web_search", content: "结果" }]} />);
 
-    const details = screen.getByText("工具 · web_search").closest("details");
+    const details = screen.getByText("已运行 web_search").closest("details");
     expect(details).not.toBeNull();
-    expect(details).toHaveAttribute("open");
-    fireEvent.click(screen.getByText("工具 · web_search"));
     expect(details).not.toHaveAttribute("open");
-    rerender(<MessageList messages={[{ role: "tool", tool: "web_search", content: "新结果" }]} />);
-    expect(screen.getByText("工具 · web_search").closest("details")).not.toHaveAttribute("open");
+    rerender(<MessageList messages={[{ role: "tool", tool: "web_search", content: "新结果", arguments: { query: "Python" }, status: "running" }]} />);
+    expect(screen.getByText("运行中 web_search query=Python")).toBeInTheDocument();
+    expect(screen.getByText("运行中 web_search query=Python").closest("details")).not.toHaveAttribute("open");
+    fireEvent.click(screen.getByText("运行中 web_search query=Python"));
+    expect(screen.getByText("新结果")).toBeInTheDocument();
+  });
+
+  it("puts the shell command in the tool summary", () => {
+    render(<MessageList messages={[{ role: "tool", tool: "shell", arguments: { command: "node bs_test.mjs" }, content: "output", status: "running" }]} />);
+
+    expect(screen.getByText("运行中 shell node bs_test.mjs")).toBeInTheDocument();
   });
 
   it("lets the user collapse the shell output panel", () => {
-    render(<ShellPanel runtime={{ sessionId: "s", runId: null, runtimeState: "IDLE", messages: [], pendingInteraction: null, plan: [], shell: [{ stream: "stdout", text: "ok" }], lastSeq: 0 }} />);
+    render(<ShellPanel runtime={{ sessionId: "s", runId: null, runtimeState: "IDLE", agentState: "REQUIREMENTS", messages: [], pendingInteraction: null, plan: [], shell: [{ stream: "stdout", text: "ok" }], lastSeq: 0 }} />);
 
     const details = screen.getByText("Shell 输出").closest("details");
     expect(details).not.toBeNull();

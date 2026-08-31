@@ -3,11 +3,36 @@ import type { ChatMessage } from "../lib/protocol";
 import type { PendingInteraction } from "../lib/protocol";
 import { MarkdownContent } from "./MarkdownContent";
 
+function formatToolArguments(argumentsValue: Record<string, unknown> | undefined): string {
+  if (!argumentsValue || Object.keys(argumentsValue).length === 0) return "";
+  const entries = Object.entries(argumentsValue).map(([key, value]) => {
+    if (key === "command" && typeof value === "string") return value;
+    if (typeof value === "string") return `${key}=${value}`;
+    try {
+      return `${key}=${JSON.stringify(value)}`;
+    } catch {
+      return `${key}=${String(value)}`;
+    }
+  });
+  const text = entries.join(" ").replace(/\s+/g, " ").trim();
+  return text.length > 180 ? `${text.slice(0, 177)}…` : text;
+}
+
+function toolSummary(message: ChatMessage): string {
+  const status = message.status === "running" ? "运行中" : message.status === "failed" ? "运行失败" : "已运行";
+  const tool = message.tool ?? "tool";
+  const argumentsText = formatToolArguments(message.arguments);
+  return `${status} ${tool}${argumentsText ? ` ${argumentsText}` : ""}`;
+}
+
 function ToolMessage({ message }: { message: ChatMessage }) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   return <details className="message tool" open={expanded} onToggle={(event) => setExpanded(event.currentTarget.open)}>
-    <summary className="message-label">工具 · {message.tool ?? "tool"}</summary>
-    <pre>{message.content}</pre>
+    <summary className="message-label">{toolSummary(message)}</summary>
+    <div className="tool-details">
+      {message.arguments && Object.keys(message.arguments).length > 0 && <pre className="tool-arguments">参数：{JSON.stringify(message.arguments, null, 2)}</pre>}
+      <pre className="tool-output">{message.content}</pre>
+    </div>
   </details>;
 }
 

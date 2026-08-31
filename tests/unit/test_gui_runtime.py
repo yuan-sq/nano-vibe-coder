@@ -114,3 +114,9 @@ async def test_agent_loop_emits_gui_lifecycle_events(tmp_path: Path) -> None:
     assert "model_response" in names
     assert "tool_started" in names
     assert "tool_finished" in names
+    started = next(payload for name, payload in events if name == "tool_started")
+    finished = next(payload for name, payload in events if name == "tool_finished")
+    assert started["arguments"] == {"target_state": "PLAN"}
+    assert finished["state"] == "PLAN"
+    tool_history = next(message for message in loop.history if message.get("role") == "tool")
+    assert tool_history["arguments"] == {"target_state": "PLAN"}

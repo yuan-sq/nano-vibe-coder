@@ -22,13 +22,19 @@ describe("GUI store", () => {
     useGuiStore.getState().reset();
     useGuiStore.getState().hydrate("session-1", {
       runtime_state: "AWAITING_INPUT",
-      history: [{ role: "user", content: "继续" }],
+      state: "PLAN",
+      history: [
+        { role: "user", content: "继续" },
+        { role: "tool", name: "shell", tool_call_id: "call-1", arguments: { command: "git status" }, content: "clean" }
+      ],
       plan: [{ id: "one", status: "pending" }],
       pending_interaction: { interaction_id: "q-1", kind: "user_request", content: "选择" }
     });
     const runtime = useGuiStore.getState().runtimes["session-1"];
     expect(runtime.runtimeState).toBe("AWAITING_INPUT");
+    expect(runtime.agentState).toBe("PLAN");
     expect(runtime.messages[0].content).toBe("继续");
+    expect(runtime.messages[1]).toMatchObject({ tool: "shell", arguments: { command: "git status" }, status: "completed" });
     expect(runtime.pendingInteraction?.interaction_id).toBe("q-1");
   });
 

@@ -7,6 +7,9 @@ export type RuntimeState =
   | "PAUSED"
   | "ERROR";
 
+export type AgentState = "REQUIREMENTS" | "PLAN" | "IMPLEMENT" | "VERIFY" | "DONE";
+export type ToolStatus = "running" | "completed" | "failed";
+
 export interface UIEvent {
   version: 1;
   session_id: string;
@@ -22,6 +25,8 @@ export interface ChatMessage {
   content: string;
   tool?: string;
   toolCallId?: string;
+  arguments?: Record<string, unknown>;
+  status?: ToolStatus;
 }
 
 export interface PendingInteraction {
@@ -39,6 +44,7 @@ export interface RuntimeView {
   sessionId: string;
   runId: string | null;
   runtimeState: RuntimeState;
+  agentState: AgentState;
   messages: ChatMessage[];
   pendingInteraction: PendingInteraction | null;
   plan: Array<Record<string, unknown>>;
@@ -50,6 +56,7 @@ export const initialRuntime = (sessionId: string): RuntimeView => ({
   sessionId,
   runId: null,
   runtimeState: "IDLE",
+  agentState: "REQUIREMENTS",
   messages: [],
   pendingInteraction: null,
   plan: [],
@@ -59,9 +66,27 @@ export const initialRuntime = (sessionId: string): RuntimeView => ({
 
 export function applyEvent(state: RuntimeView, event: UIEvent): RuntimeView {
   const next: RuntimeView = { ...state, runId: event.run_id ?? state.runId, lastSeq: Math.max(state.lastSeq, event.seq) };
+  const stateFromEvent = (): AgentState => {
+    const value = String(event.payload.state ?? "");
+    return ["REQUIREMENTS", "PLAN", "IMPLEMENT", "VERIFY", "DONE"].includes(value)
+      ? value as AgentState
+      : state.agentState;
+  };
   switch (event.type) {
     case "runtime_state":
       return { ...next, runtimeState: String(event.payload.state) as RuntimeState };
+    case "agent_state":
+    case "model_request":
+    case "model_response":
+      return { ...next, agentState: stateFromEvent() };
+    case "user_input": {
+      const content = String(event.payload.content ?? "");
+      if (!content) return { ...next, agentState: stateFromEvent() };
+      const messages = [...next.messages];
+      const last = messages[messages.length - 1];
+      if (!(last?.role === "user" && last.content === content)) messages.push({ role: "user", content });
+      return { ...next, agentState: stateFromEvent(), messages };
+    }
     case "assistant_delta": {
       const text = String(event.payload.text ?? "");
       const messages = [...next.messages];
@@ -82,19 +107,28 @@ export function applyEvent(state: RuntimeView, event: UIEvent): RuntimeView {
     case "tool_started":
       return {
         ...next,
+        agentState: stateFromEvent(),
         messages: [...next.messages, {
           role: "tool",
           content: "执行中…",
           tool: String(event.payload.tool ?? "tool"),
-          toolCallId: String(event.payload.tool_call_id ?? "")
+          toolCallId: String(event.payload.tool_call_id ?? ""),
+          arguments: event.payload.arguments && typeof event.payload.arguments === "object" && !Array.isArray(event.payload.arguments)
+            ? event.payload.arguments as Record<string, unknown>
+            : {},
+          status: "running"
         }]
       };
     case "tool_finished": {
       const id = String(event.payload.tool_call_id ?? "");
       const messages = next.messages.map((message) =>
-        message.toolCallId === id ? { ...message, content: String(event.payload.output ?? "") } : message
+        message.toolCallId === id ? {
+          ...message,
+          content: String(event.payload.output ?? ""),
+          status: event.payload.ok === false ? "failed" as const : "completed" as const
+        } : message
       );
-      return { ...next, messages };
+      return { ...next, agentState: stateFromEvent(), messages };
     }
     case "approval_requested":
     case "user_request":

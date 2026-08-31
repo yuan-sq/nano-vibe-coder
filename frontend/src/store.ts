@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { applyEvent, initialRuntime, type ChatMessage, type RuntimeView, type UIEvent } from "./lib/protocol";
+import { applyEvent, initialRuntime, type AgentState, type ChatMessage, type RuntimeView, type UIEvent } from "./lib/protocol";
 
 interface GuiStore {
   activeSessionId: string | null;
@@ -36,12 +36,21 @@ export const useGuiStore = create<GuiStore>((set) => ({
   hydrate: (sessionId, snapshot, source = "initial") => set((state) => {
     if (!snapshot) return state;
     const history = Array.isArray(snapshot.history) ? snapshot.history : [];
-    const messages = history.flatMap((item) => {
+    const messages: ChatMessage[] = history.flatMap((item): ChatMessage[] => {
       if (!item || typeof item !== "object") return [];
       const message = item as Record<string, unknown>;
       const role = message.role;
       if (role !== "user" && role !== "assistant" && role !== "tool") return [];
-      return [{ role: role as ChatMessage["role"], content: String(message.content ?? ""), tool: typeof message.name === "string" ? message.name : undefined }];
+      return [{
+        role: role as ChatMessage["role"],
+        content: String(message.content ?? ""),
+        tool: typeof message.name === "string" ? message.name : undefined,
+        toolCallId: typeof message.tool_call_id === "string" ? message.tool_call_id : undefined,
+        arguments: message.arguments && typeof message.arguments === "object" && !Array.isArray(message.arguments)
+          ? message.arguments as Record<string, unknown>
+          : undefined,
+        status: role === "tool" ? "completed" : undefined
+      }];
     });
     const current = state.runtimes[sessionId] ?? initialRuntime(sessionId);
     const hasLiveEvents = source === "initial" && current.lastSeq > 0;
@@ -52,6 +61,11 @@ export const useGuiStore = create<GuiStore>((set) => ({
         : typeof snapshot.runtime_state === "string"
           ? snapshot.runtime_state as RuntimeView["runtimeState"]
           : "IDLE",
+      agentState: hasLiveEvents
+        ? current.agentState
+        : typeof snapshot.state === "string" && ["REQUIREMENTS", "PLAN", "IMPLEMENT", "VERIFY", "DONE"].includes(snapshot.state)
+          ? snapshot.state as AgentState
+          : "REQUIREMENTS",
       messages: hasLiveEvents ? current.messages : messages,
       plan: hasLiveEvents
         ? current.plan

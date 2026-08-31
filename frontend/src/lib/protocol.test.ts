@@ -20,6 +20,43 @@ describe("GUI event reducer", () => {
     expect(state.messages).toEqual([{ role: "assistant", content: "你好" }]);
   });
 
+  it("renders user input, agent stage, and tool arguments from lifecycle events", () => {
+    let state = initialRuntime("session-1");
+    state = applyEvent(state, event("user_input", { content: "检查项目", state: "PLAN" }));
+    expect(state.agentState).toBe("PLAN");
+    expect(state.messages).toEqual([{ role: "user", content: "检查项目" }]);
+
+    state = applyEvent(state, event("tool_started", {
+      tool: "shell",
+      arguments: { command: "git status" },
+      tool_call_id: "call-1"
+    }));
+    expect(state.messages[1]).toMatchObject({
+      role: "tool",
+      tool: "shell",
+      arguments: { command: "git status" },
+      status: "running"
+    });
+
+    state = applyEvent(state, event("tool_finished", {
+      tool: "shell",
+      tool_call_id: "call-1",
+      ok: true,
+      output: "clean",
+      state: "IMPLEMENT"
+    }));
+    expect(state.agentState).toBe("IMPLEMENT");
+    expect(state.messages[1]).toMatchObject({ content: "clean", status: "completed" });
+  });
+
+  it("does not duplicate a user message already restored from a snapshot", () => {
+    let state = initialRuntime("session-1");
+    state = applyEvent(state, event("user_input", { content: "继续", state: "PLAN" }));
+    state = applyEvent(state, event("user_input", { content: "继续", state: "PLAN" }));
+
+    expect(state.messages).toHaveLength(1);
+  });
+
   it("keeps a blocking approval visible until it is resolved", () => {
     let state = initialRuntime("session-1");
     state = applyEvent(state, event("approval_requested", { interaction_id: "a-1", content: "允许吗" }));

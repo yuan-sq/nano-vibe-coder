@@ -9,6 +9,31 @@ export type RuntimeState =
 
 export type AgentState = "REQUIREMENTS" | "PLAN" | "IMPLEMENT" | "VERIFY" | "DONE";
 export type ToolStatus = "running" | "completed" | "failed";
+export type PlanStatus = "pending" | "in_progress" | "completed";
+
+export interface PlanItem {
+  id: string;
+  content: string;
+  status: PlanStatus;
+}
+
+export function parsePlanItems(value: unknown): PlanItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item): PlanItem[] => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const candidate = item as Record<string, unknown>;
+    if (
+      typeof candidate.id !== "string"
+      || typeof candidate.content !== "string"
+      || !["pending", "in_progress", "completed"].includes(String(candidate.status))
+    ) return [];
+    return [{
+      id: candidate.id,
+      content: candidate.content,
+      status: candidate.status as PlanStatus
+    }];
+  });
+}
 
 export interface UIEvent {
   version: 1;
@@ -47,7 +72,7 @@ export interface RuntimeView {
   agentState: AgentState;
   messages: ChatMessage[];
   pendingInteraction: PendingInteraction | null;
-  plan: Array<Record<string, unknown>>;
+  plan: PlanItem[];
   shell: Array<{ stream: string; text: string }>;
   lastSeq: number;
 }
@@ -137,7 +162,11 @@ export function applyEvent(state: RuntimeView, event: UIEvent): RuntimeView {
     case "user_request_resolved":
       return { ...next, pendingInteraction: null, runtimeState: "RUNNING" };
     case "plan_updated":
-      return { ...next, plan: Array.isArray(event.payload.plan) ? event.payload.plan as Array<Record<string, unknown>> : next.plan };
+      return {
+        ...next,
+        agentState: stateFromEvent(),
+        plan: Array.isArray(event.payload.plan) ? parsePlanItems(event.payload.plan) : next.plan
+      };
     case "shell_chunk":
       return { ...next, shell: [...next.shell, { stream: String(event.payload.stream ?? "stdout"), text: String(event.payload.text ?? "") }] };
     case "error":

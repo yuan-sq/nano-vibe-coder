@@ -256,6 +256,12 @@ class AgentLoop:
                 **result.to_dict(),
             },
         )
+        plan = result.metadata.get("plan")
+        if call.name == "update_plan" and result.ok and isinstance(plan, list):
+            await self._emit_event(
+                "plan_updated",
+                {"plan": plan, "state": self.machine.current.value},
+            )
         return result
 
     def _append_assistant_response(self, response: ModelResponse) -> None:

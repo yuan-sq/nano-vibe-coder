@@ -27,7 +27,7 @@ describe("GUI store", () => {
         { role: "user", content: "继续" },
         { role: "tool", name: "shell", tool_call_id: "call-1", arguments: { command: "git status" }, content: "clean" }
       ],
-      plan: [{ id: "one", status: "pending" }],
+      plan: [{ id: "one", content: "检查代码", status: "pending" }],
       pending_interaction: { interaction_id: "q-1", kind: "user_request", content: "选择" }
     });
     const runtime = useGuiStore.getState().runtimes["session-1"];
@@ -36,6 +36,7 @@ describe("GUI store", () => {
     expect(runtime.messages[0].content).toBe("继续");
     expect(runtime.messages[1]).toMatchObject({ tool: "shell", arguments: { command: "git status" }, status: "completed" });
     expect(runtime.pendingInteraction?.interaction_id).toBe("q-1");
+    expect(runtime.plan).toEqual([{ id: "one", content: "检查代码", status: "pending" }]);
   });
 
   it("omits empty assistant tool-call placeholders when hydrating history", () => {
@@ -134,12 +135,14 @@ describe("GUI store", () => {
     useGuiStore.getState().hydrate("session-1", {
       runtime_state: "AWAITING_INPUT",
       history: [{ role: "assistant", content: "持久化恢复状态" }],
-      pending_interaction: { interaction_id: "q-1", kind: "user_request", content: "选择城市" }
+      pending_interaction: { interaction_id: "q-1", kind: "user_request", content: "选择城市" },
+      plan: [{ id: "verify", content: "重新验证", status: "in_progress" }]
     }, "resync");
 
     const runtime = useGuiStore.getState().runtimes["session-1"];
     expect(runtime.runtimeState).toBe("AWAITING_INPUT");
     expect(runtime.messages[0].content).toBe("持久化恢复状态");
     expect(runtime.pendingInteraction?.interaction_id).toBe("q-1");
+    expect(runtime.plan).toEqual([{ id: "verify", content: "重新验证", status: "in_progress" }]);
   });
 });

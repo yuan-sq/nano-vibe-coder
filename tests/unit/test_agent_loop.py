@@ -11,6 +11,7 @@ from nano_vibe.models.router import ModelRouter
 from nano_vibe.skills import SkillManager
 from nano_vibe.tools.registry import ToolRegistry
 from nano_vibe.tools.transition import TransitionTool
+from nano_vibe.tools.update_plan import UpdatePlanTool
 
 
 class ScriptedModel:
@@ -37,6 +38,54 @@ class CompactingModel(ScriptedModel):
             self.summary_calls += 1
             return ModelResponse(content="A compact handoff")
         return await super().complete(messages, tools)
+
+
+@pytest.mark.asyncio
+async def test_successful_update_plan_emits_plan_updated_with_current_state(
+    tmp_path: Path,
+) -> None:
+    machine = StateMachine()
+    machine.current = AgentState.PLAN
+    events: list[tuple[str, dict[str, Any]]] = []
+    loop = AgentLoop(
+        ScriptedModel([]),
+        ToolRegistry([UpdatePlanTool(machine)]),
+        machine,
+        tmp_path,
+        on_event=lambda name, payload: events.append((name, payload)),
+    )
+
+    result = await loop._execute_tool(
+        ToolCall(
+            "plan-1",
+            "update_plan",
+            {"items": [{"id": "inspect", "content": "检查代码", "status": "in_progress"}]},
+        )
+    )
+
+    assert result.ok is True
+    assert ("plan_updated", {"plan": machine.plan.to_list(), "state": "PLAN"}) in events
+
+
+@pytest.mark.asyncio
+async def test_failed_update_plan_does_not_emit_plan_updated(tmp_path: Path) -> None:
+    machine = StateMachine()
+    machine.current = AgentState.PLAN
+    events: list[tuple[str, dict[str, Any]]] = []
+    loop = AgentLoop(
+        ScriptedModel([]),
+        ToolRegistry([UpdatePlanTool(machine)]),
+        machine,
+        tmp_path,
+        on_event=lambda name, payload: events.append((name, payload)),
+    )
+
+    result = await loop._execute_tool(
+        ToolCall("plan-1", "update_plan", {"items": [{"id": "bad"}]})
+    )
+
+    assert result.ok is False
+    assert not any(name == "plan_updated" for name, _payload in events)
 
 
 @pytest.mark.asyncio

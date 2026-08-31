@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { applyEvent, initialRuntime, type AgentState, type ChatMessage, type RuntimeView, type UIEvent } from "./lib/protocol";
+import { applyEvent, initialRuntime, parsePlanItems, type AgentState, type ChatMessage, type RuntimeView, type UIEvent } from "./lib/protocol";
 
 interface GuiStore {
   activeSessionId: string | null;
@@ -72,7 +72,7 @@ export const useGuiStore = create<GuiStore>((set) => ({
       plan: hasLiveEvents
         ? current.plan
         : Array.isArray(snapshot.plan)
-          ? snapshot.plan as Array<Record<string, unknown>>
+          ? parsePlanItems(snapshot.plan)
           : [],
       pendingInteraction: hasLiveEvents
         ? current.pendingInteraction

@@ -64,4 +64,23 @@ describe("GUI event reducer", () => {
     state = applyEvent(state, event("approval_resolved", { interaction_id: "a-1" }));
     expect(state.pendingInteraction).toBeNull();
   });
+
+  it("parses plan_updated items and updates the agent state", () => {
+    const state = applyEvent(initialRuntime("session-1"), event("plan_updated", {
+      state: "IMPLEMENT",
+      plan: [
+        { id: "inspect", content: "检查代码", status: "completed" },
+        { id: "edit", content: "修改实现", status: "in_progress" },
+        { id: "verify", content: "运行测试", status: "pending" },
+        { id: 4, content: "无效", status: "pending" }
+      ]
+    }));
+
+    expect(state.agentState).toBe("IMPLEMENT");
+    expect(state.plan).toEqual([
+      { id: "inspect", content: "检查代码", status: "completed" },
+      { id: "edit", content: "修改实现", status: "in_progress" },
+      { id: "verify", content: "运行测试", status: "pending" }
+    ]);
+  });
 });

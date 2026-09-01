@@ -22,6 +22,7 @@ class InteractionBroker:
         self.emit = emit
         self.on_pending: Callable[[PendingInteraction], Any] | None = None
         self.on_resolved: Callable[[PendingInteraction, str], Any] | None = None
+        self.on_before_resolve: Callable[[PendingInteraction, str], Any] | None = None
         self.pending: dict[str, PendingInteraction] = {}
         self._futures: dict[str, asyncio.Future[str]] = {}
 
@@ -51,6 +52,9 @@ class InteractionBroker:
         result = await self._wait(interaction)
         return str(result)
 
+    def set_before_resolve_callback(self, callback: Callable[[PendingInteraction, str], Any]) -> None:
+        self.on_before_resolve = callback
+
     async def _wait(self, interaction: PendingInteraction) -> str:
         loop = asyncio.get_running_loop()
         future: asyncio.Future[str] = loop.create_future()
@@ -75,6 +79,13 @@ class InteractionBroker:
         interaction = self.pending.get(interaction_id)
         if future is None or interaction is None or future.done():
             return False
+        if self.on_before_resolve is not None:
+            try:
+                callback_result = self.on_before_resolve(interaction, decision)
+                if inspect.isawaitable(callback_result):
+                    await callback_result
+            except Exception:  # noqa: BLE001 - persistence failures reject the interaction
+                return False
         future.set_result(decision)
         if self.on_resolved is not None:
             callback_result = self.on_resolved(interaction, decision)
@@ -97,6 +108,9 @@ class GuiUI:
 
     def tool_start(self, _name: str, _arguments: dict[str, Any]) -> None:
         return
+
+    def set_before_resolve_callback(self, callback: Callable[[PendingInteraction, str], Any]) -> None:
+        self.broker.on_before_resolve = callback
 
     async def on_event(self, name: str, payload: dict[str, Any]) -> None:
         await self.emit(name, payload)

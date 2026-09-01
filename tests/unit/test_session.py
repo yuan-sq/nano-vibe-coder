@@ -7,7 +7,7 @@ import pytest
 from nano_vibe.agent.loop import LoopStatus
 from nano_vibe.config import load_config
 from nano_vibe.models.base import ModelResponse
-from nano_vibe.permissions import ApprovalDecision, PermissionMode
+from nano_vibe.permissions import ApprovalDecision, PermissionMode, PermissionPolicy
 from nano_vibe.session import Session
 from nano_vibe.session_store import SessionSnapshot, SessionStore
 from nano_vibe.tools.shell import ShellTool
@@ -176,3 +176,17 @@ def test_restore_snapshot_restores_immutable_session_permission_mode(
     assert session.permission_mode is snapshot_mode
     assert session.registry.permission_policy is not None
     assert session.registry.permission_policy.mode is snapshot_mode
+
+
+@pytest.mark.asyncio
+async def test_session_preserves_external_session_grant_callback(tmp_path: Path) -> None:
+    callbacks: list[str] = []
+    policy = PermissionPolicy(
+        PermissionMode.NORMAL,
+        approve=lambda _name, _arguments: ApprovalDecision.SESSION,
+        on_session_grant=lambda: callbacks.append("external"),
+    )
+    Session(PlainModel(), tmp_path, permission_policy=policy)
+
+    assert await policy.authorize("apply_patch", "write", {}) is True
+    assert callbacks == ["external"]

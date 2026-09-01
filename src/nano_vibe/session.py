@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import uuid
 from collections.abc import Iterable
 from pathlib import Path
@@ -14,7 +13,7 @@ from nano_vibe.config import AppConfig
 from nano_vibe.models.base import Model
 from nano_vibe.models.openai_compat import OpenAICompatibleModel
 from nano_vibe.models.router import ModelRouter
-from nano_vibe.observability.trace import TraceWriter
+from nano_vibe.observability.trace import TraceWriter, trace_path
 from nano_vibe.permissions import PermissionMode, PermissionPolicy
 from nano_vibe.session_store import SessionSnapshot, SessionStore, SessionStoreError
 from nano_vibe.skills import SkillManager
@@ -125,8 +124,13 @@ class Session:
             skill_manager=self.skill_manager,
             on_checkpoint=self.save_snapshot,
         )
-        if self.registry.permission_policy is not None:
-            self.registry.permission_policy.set_session_grant_callback(self.save_snapshot)
+        policy = self.registry.permission_policy
+        if policy is not None:
+            policy.add_session_grant_callback(self.save_snapshot)
+        approval_owner = getattr(permission_approve, "__self__", None)
+        register_before_resolve = getattr(approval_owner, "set_before_resolve_callback", None)
+        if callable(register_before_resolve):
+            register_before_resolve(self._before_approval_resolve)
 
     async def handle_input(self, text: str) -> LoopResult:
         self.save_snapshot()
@@ -161,6 +165,15 @@ class Session:
         return self.session_store.save(self.snapshot())
 
     save = save_snapshot
+
+    def _before_approval_resolve(self, interaction: Any, decision: str) -> None:
+        if decision != "session" or not getattr(interaction, "tool_name", None):
+            return
+        policy = self.registry.permission_policy
+        if policy is None:
+            return
+        policy.grant_session(str(interaction.tool_name))
+        self.save_snapshot()
 
     def restore_snapshot(self, snapshot: SessionSnapshot) -> None:
         if snapshot.workspace and Path(snapshot.workspace).resolve() != self.workspace:
@@ -232,10 +245,8 @@ class Session:
         permission_mode: PermissionMode | str | None = None,
     ) -> Session:
         workspace_path = Path(workspace).resolve()
-        project_root = Path(__file__).resolve().parents[2]
-        workspace_id = hashlib.sha256(str(workspace_path).encode()).hexdigest()[:12]
         session_id = session_id or uuid.uuid4().hex[:12]
-        trace = TraceWriter(project_root / "runs" / workspace_id / f"{session_id}.jsonl", session_id)
+        trace = TraceWriter(trace_path(workspace_path, session_id), session_id)
         model_instances = {
             name: OpenAICompatibleModel(
                 model_config,

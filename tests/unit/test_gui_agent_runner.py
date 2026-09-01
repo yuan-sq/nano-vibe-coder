@@ -6,7 +6,7 @@ from typing import Any, cast
 import pytest
 
 from nano_vibe.agent.loop import LoopResult, LoopStatus
-from nano_vibe.config import AppConfig
+from nano_vibe.config import AppConfig, ModelConfig, RuntimeConfig
 from nano_vibe.gui.agent_runner import GuiAgentRunner, InteractionBroker
 from nano_vibe.models.base import ModelResponse
 from nano_vibe.session import Session
@@ -60,9 +60,51 @@ async def test_session_grant_is_persisted_before_authorize_returns(tmp_path: Pat
 
     interaction_id = next(iter(broker.pending))
     assert await broker.resolve(interaction_id, "session") is True
+    assert store.load("session-1").session_grants == ["apply_patch"]
     assert await authorize is True
 
     assert store.load("session-1").session_grants == ["apply_patch"]
+
+
+@pytest.mark.asyncio
+async def test_gui_runner_restores_real_session_state_and_policy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config = AppConfig(
+        active_model=ModelConfig("test", "http://example.test", "test"),
+        models={"test": ModelConfig("test", "http://example.test", "test")},
+        runtime=RuntimeConfig(permission_mode="normal"),
+    )
+    store = SessionStore(tmp_path / ".nano-vibe" / "sessions")
+    seed = Session(
+        PlainModel(),
+        tmp_path,
+        session_id="session-1",
+        session_store=store,
+        permission_mode="full-access",
+    )
+    seed.machine.current = seed.machine.current.PLAN
+    seed.machine.plan.replace([{"id": "inspect", "content": "Inspect", "status": "in_progress"}])
+    seed.loop.history = [{"role": "user", "content": "first"}]
+    assert seed.registry.permission_policy is not None
+    seed.registry.permission_policy.restore_session_grants(["apply_patch"])
+    seed.save_snapshot()
+
+    class StaticModel(PlainModel):
+        def __init__(self, _config: ModelConfig, *, retries: int, on_text: Any) -> None:
+            del retries, on_text
+
+    monkeypatch.setattr("nano_vibe.session.OpenAICompatibleModel", StaticModel)
+    runner = GuiAgentRunner(config, lambda _session_id: tmp_path)
+
+    async def emit(_name: str, _payload: dict[str, Any]) -> None:
+        return
+
+    await runner("session-1", "second", emit, asyncio.Event())
+
+    restored = store.load("session-1")
+    assert restored.permission_mode == "full-access"
+    assert restored.plan == [{"id": "inspect", "content": "Inspect", "status": "in_progress"}]
+    assert restored.session_grants == ["apply_patch"]
+    assert [item["content"] for item in restored.history if item.get("role") == "user"] == ["first", "second"]
 
 
 @pytest.mark.asyncio

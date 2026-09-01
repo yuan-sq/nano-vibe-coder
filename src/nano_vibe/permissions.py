@@ -77,6 +77,27 @@ class PermissionPolicy:
     def set_session_grant_callback(self, callback: SessionGrantCallback | None) -> None:
         self._on_session_grant = callback
 
+    def add_session_grant_callback(self, callback: SessionGrantCallback) -> None:
+        """Register a persistence hook without replacing an integration hook."""
+        if self._on_session_grant is None:
+            self._on_session_grant = callback
+            return
+        previous = self._on_session_grant
+
+        async def chained() -> None:
+            for current in (previous, callback):
+                result = current()
+                if inspect.isawaitable(result):
+                    await result
+
+        self._on_session_grant = chained
+
+    def grant_session(self, tool_name: str) -> None:
+        """Add a tool grant before an approval future is released."""
+        if not tool_name.strip():
+            raise ValueError("tool_name must not be empty")
+        self._session_grants.add(tool_name)
+
     def requires_approval(self, scope: str) -> bool:
         return self.mode is PermissionMode.NORMAL and scope in self.restricted_scopes
 

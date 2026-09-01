@@ -107,6 +107,34 @@ def test_trace_reader_paginates_and_ignores_corrupt_tail(tmp_path: Path) -> None
     assert second.items[0]["password"] == "[REDACTED]"
 
 
+def test_trace_reader_tail_returns_latest_bounded_page(tmp_path: Path) -> None:
+    path = tmp_path / "run.jsonl"
+    writer = TraceWriter(path, "session-1")
+    for index in range(205):
+        writer.record("model_request", index=index)
+
+    result = read_trace(path, tail=True, limit=100)
+
+    assert result.total == 205
+    assert [item["index"] for item in result.items] == list(range(105, 205))
+    assert result.next_offset == 205
+    assert result.has_more is False
+
+
+def test_trace_reader_tail_filters_before_retaining_latest_page(tmp_path: Path) -> None:
+    path = tmp_path / "run.jsonl"
+    writer = TraceWriter(path, "session-1")
+    for index in range(205):
+        writer.record("tool_end" if index % 2 else "model_request", index=index)
+
+    result = read_trace(path, event="tool_end", tail=True, limit=3)
+
+    assert result.total == 102
+    assert [item["index"] for item in result.items] == [199, 201, 203]
+    assert result.next_offset == 102
+    assert result.has_more is False
+
+
 class _Model:
     def __init__(self) -> None:
         self.responses = [

@@ -496,6 +496,7 @@ def create_app(
         event: str | None = None,
         offset: int = 0,
         limit: int = 100,
+        tail: bool = False,
     ) -> dict[str, object]:
         workspace = _session_workspace(session_id)
         try:
@@ -504,6 +505,7 @@ def create_app(
                 event=event,
                 offset=offset,
                 limit=limit,
+                tail=tail,
             )
         except ValueError as exc:
             raise HTTPException(

@@ -36,7 +36,7 @@ export default function App() {
   const projects = useQuery({ queryKey: ["projects"], queryFn: () => api.projects() });
   const sessions = useQuery({ queryKey: ["sessions", projectId], queryFn: () => api.sessions(projectId!), enabled: Boolean(projectId) });
   const diff = useQuery({ queryKey: ["diff", activeSessionId], queryFn: () => api.diff(activeSessionId!), enabled: Boolean(activeSessionId) && tab === "diff", refetchInterval: tab === "diff" ? 1_000 : false });
-  const trace = useQuery({ queryKey: ["trace", activeSessionId], queryFn: () => api.trace(activeSessionId!), enabled: Boolean(activeSessionId) && tab === "trace", refetchInterval: tab === "trace" ? 2_000 : false });
+  const trace = useQuery({ queryKey: ["trace", activeSessionId], queryFn: () => api.trace(activeSessionId!, { tail: true }), enabled: Boolean(activeSessionId) && tab === "trace", refetchInterval: tab === "trace" ? 2_000 : false });
   const runtime = activeSessionId ? runtimes[activeSessionId] : undefined;
 
   useEffect(() => {

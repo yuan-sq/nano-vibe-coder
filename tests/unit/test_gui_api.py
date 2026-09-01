@@ -294,6 +294,31 @@ def test_trace_api_reads_only_requested_session_trace(tmp_path: Path) -> None:
         assert response.json()["items"][0]["secret"] == "[REDACTED]"
 
 
+def test_trace_api_tail_returns_latest_events_and_counts_matches(tmp_path: Path) -> None:
+    project = _repo(tmp_path / "repo")
+    storage = AppStorage(tmp_path / "app")
+    app = create_app(storage=storage, require_auth=False, runner=_holding_runner, home=tmp_path)
+
+    from nano_vibe.observability.trace import TraceWriter, trace_path
+
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"path": str(project)}).json()["id"]
+        session_id = client.post(f"/api/v1/projects/{project_id}/sessions", json={}).json()["session_id"]
+        writer = TraceWriter(trace_path(project, session_id), session_id)
+        for index in range(205):
+            writer.record("tool_end" if index % 2 else "model_request", index=index)
+
+        response = client.get(
+            f"/api/v1/sessions/{session_id}/trace?event=tool_end&tail=true&limit=3"
+        )
+
+        assert response.status_code == 200
+        assert response.json()["total"] == 102
+        assert [item["index"] for item in response.json()["items"]] == [199, 201, 203]
+        assert response.json()["next_offset"] == 102
+        assert response.json()["has_more"] is False
+
+
 def test_session_api_uses_configured_session_directory(tmp_path: Path) -> None:
     project = _repo(tmp_path / "repo")
     custom_dir = tmp_path / "custom-sessions"

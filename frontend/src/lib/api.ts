@@ -67,11 +67,12 @@ export class GuiApi {
   async sendMessage(sessionId: string, text: string): Promise<{ run_id: string; status: string }> { return this.request(`/api/v1/sessions/${sessionId}/messages`, { method: "POST", body: JSON.stringify({ text }) }); }
   async stopRun(runId: string): Promise<{ run_id: string; status: string }> { return this.request(`/api/v1/runs/${runId}/stop`, { method: "POST" }); }
   async diff(sessionId: string): Promise<DiffSnapshot> { return this.request(`/api/v1/sessions/${sessionId}/diff`); }
-  async trace(sessionId: string, options: { event?: string; offset?: number; limit?: number } = {}): Promise<TracePage> {
+  async trace(sessionId: string, options: { event?: string; offset?: number; limit?: number; tail?: boolean } = {}): Promise<TracePage> {
     const query = new URLSearchParams();
     if (options.event) query.set("event", options.event);
     if (options.offset !== undefined) query.set("offset", String(options.offset));
     if (options.limit !== undefined) query.set("limit", String(options.limit));
+    if (options.tail !== undefined) query.set("tail", String(options.tail));
     const suffix = query.toString() ? `?${query.toString()}` : "";
     return this.request(`/api/v1/sessions/${sessionId}/trace${suffix}`);
   }

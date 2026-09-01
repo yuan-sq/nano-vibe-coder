@@ -43,4 +43,21 @@ describe("GuiApi", () => {
     expect(url.searchParams.get("tail")).toBe("true");
     expect(url.searchParams.get("limit")).toBe("3");
   });
+
+  it("selects a project with the native folder picker endpoint", async () => {
+    let requestedUrl = "";
+    let requestedInit: RequestInit | undefined;
+    const project = { id: "project-1", path: "/Users/me/repo", name: "repo" };
+    const api = new GuiApi("http://127.0.0.1:8000", async (input, init) => {
+      requestedUrl = String(input);
+      requestedInit = init;
+      return new Response(JSON.stringify(project), { status: 201 });
+    });
+
+    await expect(api.selectProject()).resolves.toMatchObject(project);
+
+    expect(requestedUrl).toBe("http://127.0.0.1:8000/api/v1/projects/select");
+    expect(requestedInit?.method).toBe("POST");
+    expect(requestedInit?.body).toBe("{}");
+  });
 });

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { GuiApi, websocketUrl, type Project, type Session } from "./lib/api";
+import { ApiError, GuiApi, websocketUrl, type Project, type Session } from "./lib/api";
 import { GuiSocketSession, type SocketCommand } from "./lib/socket";
 import { useGuiStore } from "./store";
 import { InteractionCard, MessageList } from "./components/MessageList";
 import { RightPanel } from "./components/RightPanel";
+import { SessionList } from "./components/SessionList";
 import "./styles.css";
 
 export function connectionConfig() {
@@ -157,12 +158,28 @@ export default function App() {
     }
   };
   const createSession = async () => { if (!projectId) return; const session = await api.createSession(projectId); queryClient.invalidateQueries({ queryKey: ["sessions", projectId] }); chooseSession(session); };
-  const addProject = async () => { const path = window.prompt("请输入 Git 仓库路径"); if (!path) return; const project = await api.addProject(path); queryClient.invalidateQueries({ queryKey: ["projects"] }); setProjectId(project.id); };
+  const addProject = async () => {
+    try {
+      const project = await api.selectProject();
+      await queryClient.invalidateQueries({ queryKey: ["projects"] });
+      setProjectId(project.id);
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.status === 409 && cause.message === "project_selection_cancelled") return;
+      setError(cause instanceof Error ? cause.message : "添加项目失败");
+    }
+  };
+  const renameSession = async (sessionId: string, title: string) => {
+    if (!projectId) return;
+    const updated = await api.updateSession(sessionId, { title });
+    queryClient.setQueryData<Session[]>(["sessions", projectId], (current) =>
+      current?.map((session) => session.session_id === updated.session_id ? updated : session)
+    );
+  };
 
   return <main className="app-shell">
     <header className="topbar"><div className="brand">nano-vibe-coder</div></header>
     <div className="workbench">
-      <aside className="left-panel"><div className="panel-heading"><h2>项目</h2><button onClick={addProject}>＋</button></div>{projects.isError && <div className="error">{(projects.error as Error).message}</div>}{projects.data?.map((project: Project) => <button className={`project-item ${project.id === projectId ? "selected" : ""}`} key={project.id} onClick={() => setProjectId(project.id)}><strong>{project.name}</strong><small>{project.path}</small></button>)}{projectId && <><div className="panel-heading sessions-heading"><h2>Sessions</h2><button onClick={createSession}>＋</button></div>{sessions.data?.map((session) => <button className={`session-item ${session.session_id === activeSessionId ? "selected" : ""}`} key={session.session_id} onClick={() => chooseSession(session)}>{session.title}</button>)}</>}</aside>
+      <aside className="left-panel"><div className="panel-heading"><h2>项目</h2><button onClick={() => void addProject()}>＋</button></div>{projects.isError && <div className="error">{(projects.error as Error).message}</div>}{projects.data?.map((project: Project) => <button className={`project-item ${project.id === projectId ? "selected" : ""}`} key={project.id} onClick={() => setProjectId(project.id)}><strong>{project.name}</strong><small>{project.path}</small></button>)}{projectId && <><div className="panel-heading sessions-heading"><h2>Sessions</h2><button onClick={() => void createSession()}>＋</button></div><SessionList sessions={sessions.data ?? []} activeSessionId={activeSessionId} onSelect={chooseSession} onRename={renameSession} onError={setError} /></>}</aside>
       <section className="conversation"><div className="conversation-heading"><div><h1>{activeSessionId ? "工作 Session" : "选择一个 Session"}</h1><small>{runtime?.runtimeState ?? "IDLE"} · Agent {runtime?.agentState ?? "REQUIREMENTS"}</small></div>{runtime?.runtimeState === "RUNNING" && runtime.runId && <button className="stop" onClick={() => void api.stopRun(runtime.runId!)}>停止</button>}</div>{error && <div className="error">{error}</div>}<MessageList messages={runtime?.messages ?? []} />{runtime?.pendingInteraction && <InteractionCard interaction={runtime.pendingInteraction} onResolve={resolveInteraction} />}</section>
       <RightPanel tab={tab} onTab={setTab} runtime={runtime} diff={diff.data} trace={trace.data} />
     </div>

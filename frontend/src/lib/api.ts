@@ -59,6 +59,7 @@ export class GuiApi {
   async config(scope = "global"): Promise<Record<string, unknown>> { return this.request(`/api/v1/config?scope=${encodeURIComponent(scope)}`); }
   async updateConfig(scope: string, values: Record<string, unknown>, secrets: Record<string, string> = {}): Promise<Record<string, unknown>> { return this.request("/api/v1/config", { method: "PUT", body: JSON.stringify({ scope, values, secrets }) }); }
   async projects(): Promise<Project[]> { return this.request("/api/v1/projects"); }
+  async selectProject(): Promise<Project> { return this.request("/api/v1/projects/select", { method: "POST", body: JSON.stringify({}) }); }
   async addProject(path: string, name?: string): Promise<Project> { return this.request("/api/v1/projects", { method: "POST", body: JSON.stringify({ path, name }) }); }
   async sessions(projectId: string): Promise<Session[]> { return this.request(`/api/v1/projects/${projectId}/sessions`); }
   async createSession(projectId: string, title?: string): Promise<Session> { return this.request(`/api/v1/projects/${projectId}/sessions`, { method: "POST", body: JSON.stringify({ title }) }); }

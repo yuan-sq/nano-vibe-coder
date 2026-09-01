@@ -366,6 +366,29 @@ def test_staged_addition_distinguishes_a_missing_head_blob_from_git_failure(
 
     assert entry["staged_patch"] is not None
     assert "+new" in entry["staged_patch"]
+    assert service.snapshot().to_dict().get("truncated") is None
+
+
+def test_literal_wildcard_filename_reads_only_its_own_index_blob(tmp_path: Path) -> None:
+    repo = _repo(tmp_path / "repo")
+    wildcard = repo / "z?.txt"
+    other = repo / "z!.txt"
+    wildcard.write_text("wild-old\n", encoding="utf-8")
+    other.write_text("other-old\n", encoding="utf-8")
+    _commit_all(repo)
+    service = GitDiffService(repo, "session-1")
+    service.ensure_baseline()
+    wildcard.write_text("wild-new\n", encoding="utf-8")
+    _git(repo, "add", "z?.txt")
+
+    entries = {
+        entry["path"]: entry
+        for entry in service.snapshot().to_dict()["entries"]  # type: ignore[index]
+    }
+
+    assert entries["z?.txt"]["staged_patch"] is not None
+    assert "wild-new" in entries["z?.txt"]["staged_patch"]
+    assert "other-old" not in entries["z?.txt"]["staged_patch"]
 
 
 @pytest.mark.parametrize("failure_command", ["cat-file", "show"])

@@ -277,7 +277,11 @@ class GitDiffService:
             deleted = (after is None) or "D" in xy
             status = self._entry_status(path, before, after, git_status)
             index_summary = self._git_blob_summary(path, ":") if (staged or unstaged) else None
-            head_summary = self._git_blob_summary(path, "HEAD") if staged else None
+            head_summary = (
+                self._git_blob_summary(path, "HEAD")
+                if staged and baseline.head is not None
+                else None
+            )
             summaries = [summary for summary in (before, after, index_summary, head_summary) if summary]
             binary = any(bool(summary.get("binary")) for summary in summaries)
             too_large = any(
@@ -1060,11 +1064,31 @@ class GitDiffService:
         return bounded
 
     def _git_blob_presence(self, path: str, ref: str) -> _GitBlobResult:
+        output_limit = min(
+            _MAX_BASELINE_PATH_BYTES,
+            max(4096, self._path_bytes(path) + 512),
+        )
         if ref == ":":
-            result = self._run_git("ls-files", "--stage", "-z", "--", path)
+            result = self._run_git(
+                "--literal-pathspecs",
+                "ls-files",
+                "--stage",
+                "-z",
+                "--",
+                path,
+                max_stdout_bytes=output_limit,
+            )
         else:
-            result = self._run_git("ls-tree", "-z", ref, "--", path)
-        if result.returncode != 0:
+            result = self._run_git(
+                "--literal-pathspecs",
+                "ls-tree",
+                "-z",
+                ref,
+                "--",
+                path,
+                max_stdout_bytes=output_limit,
+            )
+        if result.returncode != 0 or self._last_git_output_truncated:
             self._blob_read_failed = True
             return _GitBlobResult("failed")
         record = result.stdout.split(b"\0", 1)[0]

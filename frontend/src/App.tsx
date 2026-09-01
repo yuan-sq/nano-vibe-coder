@@ -31,8 +31,10 @@ export default function App() {
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"plan" | "diff" | "trace">("plan");
+  const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
   const socketRef = useRef<GuiSocketSession | null>(null);
-  const { activeSessionId, setActiveSession, runtimes, unreadSessions, ingest, hydrate, setLastSeq, setConnected, connected } = useGuiStore();
+  const { activeSessionId, setActiveSession, runtimes, unreadSessions, ingest, hydrate, setLastSeq, setConnected } = useGuiStore();
   const projects = useQuery({ queryKey: ["projects"], queryFn: () => api.projects() });
   const sessions = useQuery({ queryKey: ["sessions", projectId], queryFn: () => api.sessions(projectId!), enabled: Boolean(projectId) });
   const diff = useQuery({ queryKey: ["diff", activeSessionId], queryFn: () => api.diff(activeSessionId!), enabled: Boolean(activeSessionId) && tab === "diff", refetchInterval: tab === "diff" ? 1_000 : false });
@@ -40,7 +42,7 @@ export default function App() {
   const runtime = activeSessionId ? runtimes[activeSessionId] : undefined;
 
   useEffect(() => {
-    document.title = unreadSessions.length ? `(${unreadSessions.length}) nano-vibe GUI` : "nano-vibe GUI";
+    document.title = unreadSessions.length ? `(${unreadSessions.length}) nano-vibe-coder` : "nano-vibe-coder";
   }, [unreadSessions.length]);
 
   useEffect(() => {
@@ -133,7 +135,7 @@ export default function App() {
   };
   const send = async () => {
     const trimmed = text.trim();
-    if (!activeSessionId || !trimmed) return;
+    if (!activeSessionId || !trimmed || sendingRef.current) return;
     setError(null);
     if (runtime?.pendingInteraction?.kind === "user_request") {
       resolveInteraction(trimmed);
@@ -141,23 +143,29 @@ export default function App() {
       return;
     }
     if (runtime?.pendingInteraction) return;
+    if (runtime?.runtimeState === "RUNNING" || runtime?.runtimeState === "STOPPING") return;
+    sendingRef.current = true;
+    setSending(true);
     try {
       await api.sendMessage(activeSessionId, trimmed);
       setText("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "发送失败");
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
     }
   };
   const createSession = async () => { if (!projectId) return; const session = await api.createSession(projectId); queryClient.invalidateQueries({ queryKey: ["sessions", projectId] }); chooseSession(session); };
   const addProject = async () => { const path = window.prompt("请输入 Git 仓库路径"); if (!path) return; const project = await api.addProject(path); queryClient.invalidateQueries({ queryKey: ["projects"] }); setProjectId(project.id); };
 
   return <main className="app-shell">
-    <header className="topbar"><div className="brand">nano-vibe <span>V3</span></div><div className={`connection ${connected ? "online" : "offline"}`}>{connected ? "已连接" : "未连接"}</div></header>
+    <header className="topbar"><div className="brand">nano-vibe-coder</div></header>
     <div className="workbench">
       <aside className="left-panel"><div className="panel-heading"><h2>项目</h2><button onClick={addProject}>＋</button></div>{projects.isError && <div className="error">{(projects.error as Error).message}</div>}{projects.data?.map((project: Project) => <button className={`project-item ${project.id === projectId ? "selected" : ""}`} key={project.id} onClick={() => setProjectId(project.id)}><strong>{project.name}</strong><small>{project.path}</small></button>)}{projectId && <><div className="panel-heading sessions-heading"><h2>Sessions</h2><button onClick={createSession}>＋</button></div>{sessions.data?.map((session) => <button className={`session-item ${session.session_id === activeSessionId ? "selected" : ""}`} key={session.session_id} onClick={() => chooseSession(session)}>{session.title}</button>)}</>}</aside>
       <section className="conversation"><div className="conversation-heading"><div><h1>{activeSessionId ? "工作 Session" : "选择一个 Session"}</h1><small>{runtime?.runtimeState ?? "IDLE"} · Agent {runtime?.agentState ?? "REQUIREMENTS"}</small></div>{runtime?.runtimeState === "RUNNING" && runtime.runId && <button className="stop" onClick={() => void api.stopRun(runtime.runId!)}>停止</button>}</div>{error && <div className="error">{error}</div>}<MessageList messages={runtime?.messages ?? []} />{runtime?.pendingInteraction && <InteractionCard interaction={runtime.pendingInteraction} onResolve={resolveInteraction} />}</section>
       <RightPanel tab={tab} onTab={setTab} runtime={runtime} diff={diff.data} trace={trace.data} />
     </div>
-    <footer className="composer"><textarea value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} placeholder="描述你要完成的任务…" disabled={!activeSessionId} /><button onClick={() => void send()} disabled={!activeSessionId || !text.trim()}>发送</button></footer>
+    <footer className="composer"><textarea value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} placeholder="描述你要完成的任务…" disabled={!activeSessionId} /><button onClick={() => void send()} disabled={!activeSessionId || !text.trim() || sending || runtime?.runtimeState === "RUNNING" || runtime?.runtimeState === "STOPPING"}>发送</button></footer>
   </main>;
 }

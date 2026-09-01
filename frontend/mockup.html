@@ -92,7 +92,7 @@
       .message-list { min-height: 0; flex: 1; overflow: auto; padding: 28px 30px 22px; }
       .message { max-width: 88%; margin-bottom: 22px; }
       .message.user { margin-left: auto; }
-      .message-label { margin: 0 0 7px 2px; color: var(--color-muted); font-size: 11px; font-weight: 650; }
+      .message-label { margin: 0 0 7px 2px; color: var(--color-muted); font-size: 13px; font-weight: 650; }
       .message.user .message-label { text-align: right; }
       .message-bubble { padding: 14px 17px; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); box-shadow: var(--shadow-card); }
       .message.user .message-bubble { border-color: #dcd8ff; background: var(--color-primary-soft); box-shadow: none; }
@@ -109,16 +109,16 @@
       .tool-card summary::marker { color: var(--color-primary); }
       .tool-name { color: var(--color-text); font-weight: 650; }
       .tool-args { overflow: hidden; color: var(--color-muted); text-overflow: ellipsis; white-space: nowrap; }
-      .tool-state { margin-left: auto; padding: 3px 7px; border-radius: 999px; color: var(--color-primary-ink); background: var(--color-primary-soft); font-size: 10px; white-space: nowrap; }
+      .tool-state { margin-left: auto; padding: 3px 7px; border-radius: 999px; color: var(--color-primary-ink); background: var(--color-primary-soft); font-size: 12px; white-space: nowrap; }
       .tool-card.done .tool-state { color: var(--color-success); background: var(--color-success-soft); }
       .tool-details { margin: 0 0 0 20px; padding: 11px 13px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface-muted); }
-      .tool-details-label { margin-bottom: 5px; color: var(--color-muted); font-size: 11px; }
+      .tool-details-label { margin-bottom: 5px; color: var(--color-muted); font-size: 12px; }
       .tool-details pre { overflow: auto; margin: 0; white-space: pre-wrap; word-break: break-word; font: 12px/1.55 var(--font-mono); }
 
       .approval-card { max-width: 88%; margin: 0 0 22px; padding: 17px 18px; border: 1px solid #eadca8; border-radius: var(--radius-md); background: var(--color-warning-soft); box-shadow: var(--shadow-card); }
       .approval-card strong { font-size: 14px; }
       .approval-card p { margin: 7px 0 0; }
-      .approval-meta { display: block; margin-top: 9px; color: #7c6d38; font-size: 11px; }
+      .approval-meta { display: block; margin-top: 9px; color: #7c6d38; font-size: 13px; }
       .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
       .primary-button, .danger-button, .ghost-button { padding: 8px 12px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 650; }
       .primary-button { color: #fff; background: var(--color-primary); }
@@ -178,8 +178,7 @@
   <body>
     <div class="app-shell">
       <header class="topbar">
-        <div class="brand">nano-vibe <span class="brand-version">V3</span></div>
-        <div class="connection">已连接</div>
+        <div class="brand">nano-vibe-coder<span class="brand-version"></span></div>
       </header>
 
       <div class="workbench">
@@ -260,7 +259,6 @@ frontend/src/components/RightPanel.tsx</pre>
             </details>
 
             <section class="approval-card">
-              <strong>需要你的确认</strong>
               <p>即将修改 frontend/mockup.html，是否允许本次文件写入？</p>
               <span class="approval-meta">工具：apply_patch · 权限：write</span>
               <div class="actions">
@@ -309,7 +307,6 @@ frontend/src/components/RightPanel.tsx</pre>
           <section class="tab-panel" data-tab-panel="trace">
             <h2 class="panel-heading-large">运行观测</h2>
             <div class="trace-stats">
-              <div class="trace-stat"><span>运行状态</span><strong>IDLE</strong></div>
               <div class="trace-stat"><span>Agent 阶段</span><strong>REQUIREMENTS</strong></div>
               <div class="trace-stat"><span>事件序号</span><strong>98</strong></div>
             </div>

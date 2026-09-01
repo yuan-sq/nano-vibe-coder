@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { useGuiStore } from "./store";
@@ -8,7 +8,9 @@ const testState = vi.hoisted(() => ({
   sessionCalls: 0,
   sockets: [] as Array<{ failInteraction: () => void; failCleanup: () => void }>,
   returnCleanSnapshot: false,
-  returnMissingSnapshot: false
+  returnMissingSnapshot: false,
+  sendCalls: 0,
+  releaseSend: null as (() => void) | null
 }));
 
 vi.mock("./lib/api", () => ({
@@ -27,6 +29,16 @@ vi.mock("./lib/api", () => ({
             }
           : { runtime_state: "PAUSED", pending_interaction: null }
       };
+    }
+    async sendMessage() {
+      testState.sendCalls += 1;
+      await new Promise<void>((resolve) => {
+        testState.releaseSend = () => {
+          testState.releaseSend = null;
+          resolve();
+        };
+      });
+      return { run_id: "run-1", status: "RUNNING" };
     }
   },
   websocketUrl: () => "ws://127.0.0.1:8000/api/v1/ws/none"
@@ -66,6 +78,8 @@ describe("App shell layout", () => {
     testState.sockets.length = 0;
     testState.returnCleanSnapshot = false;
     testState.returnMissingSnapshot = false;
+    testState.sendCalls = 0;
+    testState.releaseSend = null;
   });
 
   it("does not render a standalone Shell output panel", () => {
@@ -73,6 +87,8 @@ describe("App shell layout", () => {
     render(<QueryClientProvider client={queryClient}><App /></QueryClientProvider>);
 
     expect(screen.queryByText("Shell 输出")).not.toBeInTheDocument();
+    expect(screen.queryByText("V3")).not.toBeInTheDocument();
+    expect(screen.queryByText("已连接")).not.toBeInTheDocument();
     expect(screen.getByPlaceholderText("描述你要完成的任务…")).toBeInTheDocument();
   });
 
@@ -85,11 +101,12 @@ describe("App shell layout", () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={queryClient}><App /></QueryClientProvider>);
 
-    expect(await screen.findByText("需要你的确认")).toBeInTheDocument();
+    expect(await screen.findByText("确认")).toBeInTheDocument();
+    expect(screen.queryByText("需要你的确认")).not.toBeInTheDocument();
     await waitFor(() => expect(testState.sockets).toHaveLength(1));
     testState.sockets[0].failInteraction();
 
-    await waitFor(() => expect(screen.queryByText("需要你的确认")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText("确认")).not.toBeInTheDocument());
     expect(testState.sessionCalls).toBeGreaterThanOrEqual(2);
   });
 
@@ -102,12 +119,12 @@ describe("App shell layout", () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={queryClient}><App /></QueryClientProvider>);
 
-    expect(await screen.findByText("需要你的确认")).toBeInTheDocument();
+    expect(await screen.findByText("确认")).toBeInTheDocument();
     await waitFor(() => expect(testState.sockets).toHaveLength(1));
     testState.returnMissingSnapshot = true;
     testState.sockets[0].failInteraction();
 
-    await waitFor(() => expect(screen.queryByText("需要你的确认")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText("确认")).not.toBeInTheDocument());
   });
 
   it("shows stale cleanup persistence errors from the server", async () => {
@@ -119,11 +136,29 @@ describe("App shell layout", () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={queryClient}><App /></QueryClientProvider>);
 
-    expect(await screen.findByText("需要你的确认")).toBeInTheDocument();
+    expect(await screen.findByText("确认")).toBeInTheDocument();
     await waitFor(() => expect(testState.sockets).toHaveLength(1));
     testState.sockets[0].failCleanup();
 
     expect(await screen.findByText("无法写入 Session 快照：磁盘不可写")).toBeInTheDocument();
-    expect(screen.getByText("需要你的确认")).toBeInTheDocument();
+    expect(screen.getByText("确认")).toBeInTheDocument();
+  });
+
+  it("does not POST duplicate messages while the first send is pending", async () => {
+    useGuiStore.getState().setActiveSession("session-1");
+    testState.returnCleanSnapshot = true;
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><App /></QueryClientProvider>);
+
+    const input = await screen.findByPlaceholderText("描述你要完成的任务…");
+    fireEvent.change(input, { target: { value: "执行一次任务" } });
+    const sendButton = screen.getByRole("button", { name: "发送" });
+    fireEvent.click(sendButton);
+    fireEvent.click(sendButton);
+
+    expect(testState.sendCalls).toBe(1);
+    expect(sendButton).toBeDisabled();
+    testState.releaseSend?.();
+    await waitFor(() => expect(testState.releaseSend).toBeNull());
   });
 });

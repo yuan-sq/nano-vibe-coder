@@ -30,7 +30,8 @@ function ToolMessage({ message }: { message: ChatMessage }) {
   return <details className="message tool" open={expanded} onToggle={(event) => setExpanded(event.currentTarget.open)}>
     <summary className="message-label">{toolSummary(message)}</summary>
     <div className="tool-details">
-      {message.arguments && Object.keys(message.arguments).length > 0 && <pre className="tool-arguments">参数：{JSON.stringify(message.arguments, null, 2)}</pre>}
+      {message.arguments && Object.keys(message.arguments).length > 0 && <><div className="tool-details-label">参数</div><pre className="tool-arguments">{JSON.stringify(message.arguments, null, 2)}</pre></>}
+      <div className="tool-details-label">输出</div>
       <pre className="tool-output">{message.content}</pre>
     </div>
   </details>;
@@ -71,7 +72,6 @@ export function InteractionCard({ interaction, onResolve }: { interaction: Pendi
     </section>;
   }
   return <section className="approval-card">
-    <strong>需要你的确认</strong>
     <p>{interaction.content}</p>
     {interaction.tool_name && <code>{interaction.tool_name} · {interaction.capability}</code>}
     {interaction.reason && <small>{interaction.reason}</small>}

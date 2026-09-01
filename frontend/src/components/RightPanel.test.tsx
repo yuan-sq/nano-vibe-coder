@@ -87,6 +87,7 @@ describe("RightPanel trace", () => {
 
     expect(screen.getByText("model_request")).toBeInTheDocument();
     expect(screen.getByText("PLAN")).toBeInTheDocument();
+    expect(screen.queryByText("运行状态")).not.toBeInTheDocument();
     expect(screen.getByText("2026-09-01T00:00:00Z")).toBeInTheDocument();
     const details = screen.getByText("model_request").closest("details");
     expect(details).not.toHaveAttribute("open");

@@ -9,16 +9,30 @@ interface SessionListProps {
   onError?: (message: string) => void;
 }
 
+type ContextMenuState = { sessionId: string; x: number; y: number } | null;
+
 export function SessionList({ sessions, activeSessionId, onSelect, onRename, onError }: SessionListProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
   const savingRef = useRef(false);
-  const clickTimerRef = useRef<number | null>(null);
 
-  useEffect(() => () => {
-    if (clickTimerRef.current !== null) window.clearTimeout(clickTimerRef.current);
-  }, []);
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("scroll", close, true);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("scroll", close, true);
+    };
+  }, [contextMenu]);
 
   const cancelEdit = () => {
     setEditingId(null);
@@ -29,10 +43,6 @@ export function SessionList({ sessions, activeSessionId, onSelect, onRename, onE
     event.preventDefault();
     event.stopPropagation();
     if (savingRef.current) return;
-    if (clickTimerRef.current !== null) {
-      window.clearTimeout(clickTimerRef.current);
-      clickTimerRef.current = null;
-    }
     setEditingId(session.session_id);
     setDraft(session.title);
   };
@@ -63,18 +73,19 @@ export function SessionList({ sessions, activeSessionId, onSelect, onRename, onE
     }
   };
 
-  const scheduleSelect = (event: React.MouseEvent, session: Session) => {
+  const openContextMenu = (event: React.MouseEvent, session: Session) => {
+    event.preventDefault();
     event.stopPropagation();
-    if (event.detail > 1) {
-      beginEdit(event, session);
-      return;
-    }
-    if (clickTimerRef.current !== null) window.clearTimeout(clickTimerRef.current);
-    clickTimerRef.current = window.setTimeout(() => {
-      clickTimerRef.current = null;
-      onSelect(session);
-    }, 220);
+    const menuWidth = 120;
+    const menuHeight = 40;
+    setContextMenu({
+      sessionId: session.session_id,
+      x: Math.max(4, Math.min(event.clientX, window.innerWidth - menuWidth - 4)),
+      y: Math.max(4, Math.min(event.clientY, window.innerHeight - menuHeight - 4))
+    });
   };
+
+  const menuSession = contextMenu ? sessions.find((session) => session.session_id === contextMenu.sessionId) : null;
 
   return <div className="session-list">
     {sessions.map((session) => {
@@ -102,11 +113,28 @@ export function SessionList({ sessions, activeSessionId, onSelect, onRename, onE
             />
           : <button
               className="session-item"
-              onClick={(event) => scheduleSelect(event, session)}
-              onDoubleClick={(event) => beginEdit(event, session)}
+              onClick={() => onSelect(session)}
+              onContextMenu={(event) => openContextMenu(event, session)}
             >{session.title}</button>}
-        {!editing && <button className="session-edit" aria-label={`重命名 ${session.title}`} onClick={(event) => beginEdit(event, session)}>✎</button>}
       </div>;
     })}
+    {contextMenu && menuSession && <div
+      className="session-context-menu"
+      role="menu"
+      style={{ left: contextMenu.x, top: contextMenu.y }}
+      onMouseDown={(event) => event.stopPropagation()}
+    >
+      <button
+        type="button"
+        role="menuitem"
+        onClick={(event) => {
+          event.stopPropagation();
+          setContextMenu(null);
+          beginEdit(event, menuSession);
+        }}
+      >
+        重命名
+      </button>
+    </div>}
   </div>;
 }

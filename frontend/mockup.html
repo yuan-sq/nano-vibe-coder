@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>nano-vibe V3 · 静态视觉稿</title>
+    <style>
+      /*
+       * 视觉调整从这里开始：改字体、颜色、圆角和阴影，下面的布局会同步变化。
+       * 该文件没有外部依赖，保存后直接双击即可查看。
+       */
+      :root {
+        --font-body: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        --color-bg: #f7f8fb;
+        --color-surface: #ffffff;
+        --color-surface-muted: #f2f3f7;
+        --color-border: #e2e5ec;
+        --color-border-strong: #d4d8e2;
+        --color-text: #20242d;
+        --color-muted: #858c9a;
+        --color-primary: #6d5dfc;
+        --color-primary-soft: #efedff;
+        --color-primary-ink: #5041d2;
+        --color-success: #238753;
+        --color-success-soft: #eaf8ef;
+        --color-warning: #9a6a12;
+        --color-warning-soft: #fff8df;
+        --color-danger: #bd4747;
+        --color-danger-soft: #fff0f0;
+        --color-code-add: #e8f7ed;
+        --color-code-add-ink: #1a713a;
+        --color-code-delete: #fff0f0;
+        --color-code-delete-ink: #a73131;
+        --radius-sm: 8px;
+        --radius-md: 13px;
+        --shadow-card: 0 1px 3px rgb(31 36 48 / 7%), 0 12px 28px rgb(31 36 48 / 4%);
+      }
+
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        min-width: 1080px;
+        color: var(--color-text);
+        background: var(--color-bg);
+        font: 14px/1.55 var(--font-body);
+      }
+      button, textarea { font: inherit; }
+      button { border: 0; cursor: pointer; }
+
+      .app-shell { min-height: 100vh; display: flex; flex-direction: column; }
+      .topbar {
+        height: 62px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 26px;
+        background: var(--color-surface);
+        border-bottom: 1px solid var(--color-border);
+      }
+      .brand { display: flex; align-items: baseline; gap: 9px; font-size: 18px; font-weight: 760; letter-spacing: -.03em; }
+      .brand-version { color: var(--color-primary); font-size: 12px; font-weight: 750; letter-spacing: 0; }
+      .connection { display: inline-flex; align-items: center; gap: 7px; color: var(--color-success); font-size: 12px; font-weight: 650; }
+      .connection::before { width: 7px; height: 7px; content: ""; display: block; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 4px var(--color-success-soft); }
+
+      .workbench { flex: 1; min-height: 0; display: grid; grid-template-columns: 258px minmax(560px, 1fr) 348px; }
+      .sidebar, .inspector { min-height: 0; overflow: auto; background: var(--color-surface); }
+      .sidebar { padding: 20px 14px; border-right: 1px solid var(--color-border); }
+      .inspector { padding: 0 18px; border-left: 1px solid var(--color-border); }
+      .section-heading { display: flex; align-items: center; justify-content: space-between; margin: 4px 7px 10px; }
+      .section-heading h2 { margin: 0; color: var(--color-muted); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+      .icon-button { width: 30px; height: 30px; display: grid; place-items: center; border-radius: var(--radius-sm); color: var(--color-primary); background: transparent; font-size: 22px; line-height: 1; }
+      .icon-button:hover { background: var(--color-primary-soft); }
+      .project-card { padding: 14px 13px; border: 1px solid #dedbff; border-radius: var(--radius-md); background: var(--color-primary-soft); }
+      .project-card strong { display: block; font-size: 15px; }
+      .project-path { display: block; max-width: 100%; overflow: hidden; color: var(--color-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+      .sidebar-section { margin-top: 28px; }
+      .session-list { display: grid; gap: 4px; }
+      .session-row { width: 100%; display: flex; align-items: center; gap: 9px; padding: 11px 12px; color: var(--color-text); text-align: left; border-radius: var(--radius-sm); background: transparent; }
+      .session-row:hover, .session-row.selected { background: var(--color-primary-soft); }
+      .session-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: #c9ced8; }
+      .session-row.selected .session-dot { background: var(--color-primary); box-shadow: 0 0 0 4px #e3e0ff; }
+      .session-row small { margin-left: auto; color: var(--color-muted); font-size: 11px; }
+
+      .conversation { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--color-bg); }
+      .conversation-header { display: flex; align-items: center; justify-content: space-between; padding: 24px 30px 20px; background: var(--color-surface); border-bottom: 1px solid var(--color-border); }
+      .conversation-header h1 { margin: 0 0 4px; font-size: 18px; letter-spacing: -.02em; }
+      .session-status { display: flex; align-items: center; gap: 8px; color: var(--color-muted); font-size: 12px; }
+      .status-pill { padding: 3px 8px; border-radius: 999px; color: var(--color-success); background: var(--color-success-soft); font-size: 11px; font-weight: 700; }
+      .header-note { color: var(--color-muted); font-size: 11px; }
+      .message-list { min-height: 0; flex: 1; overflow: auto; padding: 28px 30px 22px; }
+      .message { max-width: 88%; margin-bottom: 22px; }
+      .message.user { margin-left: auto; }
+      .message-label { margin: 0 0 7px 2px; color: var(--color-muted); font-size: 11px; font-weight: 650; }
+      .message.user .message-label { text-align: right; }
+      .message-bubble { padding: 14px 17px; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); box-shadow: var(--shadow-card); }
+      .message.user .message-bubble { border-color: #dcd8ff; background: var(--color-primary-soft); box-shadow: none; }
+      .message-bubble p { margin: 0 0 12px; }
+      .message-bubble p:last-child { margin-bottom: 0; }
+      .message-bubble h3 { margin: 0 0 8px; font-size: 15px; }
+      .message-bubble ul { margin: 8px 0 0; padding-left: 21px; }
+      .message-bubble li + li { margin-top: 5px; }
+      code, .inline-code { padding: 2px 5px; border-radius: 5px; background: var(--color-surface-muted); font: .9em var(--font-mono); }
+      .message-bubble pre { overflow: auto; margin: 12px 0 0; padding: 12px; border-radius: var(--radius-sm); background: #20242d; color: #e9edf5; font: 12px/1.6 var(--font-mono); }
+
+      .tool-card { max-width: 88%; margin: -7px 0 22px; }
+      .tool-card summary { display: flex; align-items: center; gap: 9px; padding: 4px 2px 7px; cursor: pointer; color: var(--color-muted); list-style-position: inside; }
+      .tool-card summary::marker { color: var(--color-primary); }
+      .tool-name { color: var(--color-text); font-weight: 650; }
+      .tool-args { overflow: hidden; color: var(--color-muted); text-overflow: ellipsis; white-space: nowrap; }
+      .tool-state { margin-left: auto; padding: 3px 7px; border-radius: 999px; color: var(--color-primary-ink); background: var(--color-primary-soft); font-size: 10px; white-space: nowrap; }
+      .tool-card.done .tool-state { color: var(--color-success); background: var(--color-success-soft); }
+      .tool-details { margin: 0 0 0 20px; padding: 11px 13px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface-muted); }
+      .tool-details-label { margin-bottom: 5px; color: var(--color-muted); font-size: 11px; }
+      .tool-details pre { overflow: auto; margin: 0; white-space: pre-wrap; word-break: break-word; font: 12px/1.55 var(--font-mono); }
+
+      .approval-card { max-width: 88%; margin: 0 0 22px; padding: 17px 18px; border: 1px solid #eadca8; border-radius: var(--radius-md); background: var(--color-warning-soft); box-shadow: var(--shadow-card); }
+      .approval-card strong { font-size: 14px; }
+      .approval-card p { margin: 7px 0 0; }
+      .approval-meta { display: block; margin-top: 9px; color: #7c6d38; font-size: 11px; }
+      .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+      .primary-button, .danger-button, .ghost-button { padding: 8px 12px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 650; }
+      .primary-button { color: #fff; background: var(--color-primary); }
+      .primary-button:hover { background: var(--color-primary-ink); }
+      .danger-button { color: #fff; background: var(--color-danger); }
+      .ghost-button { color: var(--color-text); background: var(--color-surface); border: 1px solid var(--color-border-strong); }
+
+      .composer { display: flex; align-items: flex-end; gap: 12px; padding: 14px 30px 21px; background: var(--color-surface); border-top: 1px solid var(--color-border); }
+      .composer textarea { min-height: 48px; max-height: 130px; flex: 1; resize: vertical; padding: 12px 14px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); outline: none; color: var(--color-text); background: var(--color-surface); }
+      .composer textarea::placeholder { color: #a1a7b2; }
+      .composer textarea:focus { border-color: var(--color-primary); box-shadow: 0 0 0 3px var(--color-primary-soft); }
+      .send-button { min-width: 66px; padding: 11px 14px; border-radius: var(--radius-sm); color: #fff; background: var(--color-primary); opacity: .48; cursor: not-allowed; }
+
+      .tabs { position: sticky; top: 0; z-index: 1; display: flex; gap: 4px; padding-top: 13px; background: var(--color-surface); border-bottom: 1px solid var(--color-border); }
+      .tab-button { position: relative; padding: 11px 12px 12px; color: var(--color-muted); background: transparent; font-weight: 650; }
+      .tab-button:hover, .tab-button.active { color: var(--color-primary-ink); }
+      .tab-button.active::after { position: absolute; right: 9px; bottom: -1px; left: 9px; height: 2px; content: ""; border-radius: 2px; background: var(--color-primary); }
+      .tab-panel { display: none; padding: 20px 1px 30px; }
+      .tab-panel.active { display: block; }
+      .panel-heading-large { margin: 0 0 16px; font-size: 15px; letter-spacing: -.01em; }
+      .empty-hint { padding: 54px 10px; color: var(--color-muted); text-align: center; }
+      .plan-item { display: grid; grid-template-columns: 82px 1fr; gap: 9px; padding: 12px 0; border-bottom: 1px solid var(--color-surface-muted); }
+      .plan-status { color: var(--color-muted); font-size: 11px; font-weight: 700; text-transform: uppercase; }
+      .plan-status.completed { color: var(--color-success); }
+      .plan-status.in-progress { color: var(--color-primary); }
+      .plan-status.pending { color: var(--color-muted); }
+      .plan-item p { margin: 0; }
+      .plan-item small { display: block; margin-top: 3px; color: var(--color-muted); font-size: 11px; }
+
+      .diff-file, .trace-event { border-bottom: 1px solid var(--color-surface-muted); }
+      .diff-file summary, .trace-event summary { display: flex; align-items: center; gap: 8px; padding: 12px 0; cursor: pointer; list-style-position: inside; }
+      .diff-file summary::marker, .trace-event summary::marker { color: var(--color-primary); }
+      .file-name, .trace-event strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .file-state { margin-left: auto; color: var(--color-warning); font-size: 11px; white-space: nowrap; }
+      .diff-details { padding: 0 0 12px 18px; }
+      .diff-meta { display: flex; justify-content: space-between; margin-bottom: 7px; color: var(--color-muted); font-size: 11px; }
+      .patch { overflow: auto; margin: 0; padding: 10px; border-radius: var(--radius-sm); background: #20242d; color: #dfe4ed; font: 11px/1.55 var(--font-mono); }
+      .patch-line { display: block; min-height: 1.55em; white-space: pre; }
+      .patch-line.add { color: var(--color-code-add-ink); background: var(--color-code-add); }
+      .patch-line.delete { color: var(--color-code-delete-ink); background: var(--color-code-delete); }
+      .diff-more { margin-top: 8px; color: var(--color-muted); font-size: 11px; }
+      .trace-stats { display: grid; gap: 8px; margin-bottom: 18px; }
+      .trace-stat { display: flex; justify-content: space-between; gap: 12px; color: var(--color-muted); }
+      .trace-stat strong { color: var(--color-text); font-weight: 700; }
+      .trace-event summary { gap: 9px; font-size: 11px; }
+      .trace-event time { flex: 0 0 auto; color: var(--color-muted); font: 10px var(--font-mono); }
+      .trace-event summary span { margin-left: auto; color: var(--color-primary); }
+      .trace-event pre { overflow: auto; max-height: 190px; margin: 0 0 11px 18px; padding: 10px; border-radius: var(--radius-sm); background: var(--color-surface-muted); font: 11px/1.5 var(--font-mono); white-space: pre-wrap; word-break: break-word; }
+
+      @media (max-width: 1200px) {
+        body { min-width: 960px; }
+        .workbench { grid-template-columns: 220px minmax(480px, 1fr) 300px; }
+        .conversation-header, .message-list, .composer { padding-right: 22px; padding-left: 22px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">nano-vibe <span class="brand-version">V3</span></div>
+        <div class="connection">已连接</div>
+      </header>
+
+      <div class="workbench">
+        <aside class="sidebar project-sidebar" aria-label="项目与 Session">
+          <div class="section-heading">
+            <h2>项目</h2>
+            <button class="icon-button" type="button" aria-label="添加项目">＋</button>
+          </div>
+          <section class="project-card">
+            <strong>test-repo</strong>
+            <span class="project-path">/Users/ysq/Projects/test-repo</span>
+          </section>
+
+          <section class="sidebar-section">
+            <div class="section-heading">
+              <h2>Sessions</h2>
+              <button class="icon-button" type="button" aria-label="新建 Session">＋</button>
+            </div>
+            <div class="session-list">
+              <button class="session-row selected" type="button"><span class="session-dot"></span><span>静态页面设计</span><small>现在</small></button>
+              <button class="session-row" type="button"><span class="session-dot"></span><span>冒泡排序演示</span><small>昨天</small></button>
+              <button class="session-row" type="button"><span class="session-dot"></span><span>检查项目结构</span><small>周一</small></button>
+              <button class="session-row" type="button"><span class="session-dot"></span><span>天气查询</span><small>周日</small></button>
+              <button class="session-row" type="button"><span class="session-dot"></span><span>未命名 Session</span><small>更早</small></button>
+            </div>
+          </section>
+        </aside>
+
+        <main class="conversation">
+          <header class="conversation-header">
+            <div>
+              <h1>工作 Session</h1>
+              <div class="session-status"><span class="status-pill">IDLE</span><span>Agent REQUIREMENTS</span></div>
+            </div>
+            <span class="header-note">静态视觉稿 · 固定示例数据</span>
+          </header>
+
+          <section class="message-list" aria-label="对话内容">
+            <article class="message user">
+              <div class="message-label">你</div>
+              <div class="message-bubble"><p>帮我设计一个适合 nano-vibe 的前端页面</p></div>
+            </article>
+
+            <article class="message">
+              <div class="message-label">Agent</div>
+              <div class="message-bubble">
+                <p>我会先检查当前 GUI 的结构，再整理一个可以直接调整视觉风格的静态稿。</p>
+                <h3>本次会关注</h3>
+                <ul>
+                  <li>项目和 Session 的层次关系</li>
+                  <li>对话、工具调用与审批状态</li>
+                  <li>Plan、Diff、Trace 的信息密度</li>
+                </ul>
+                <pre><code>frontend/mockup.html</code></pre>
+              </div>
+            </article>
+
+            <details class="tool-card">
+              <summary><span class="tool-name">运行中 shell</span><span class="tool-args">rg --files frontend/src</span><span class="tool-state">运行中</span></summary>
+              <div class="tool-details">
+                <div class="tool-details-label">参数</div>
+                <pre>{"command":"rg --files frontend/src","timeout":30}</pre>
+                <div class="tool-details-label">输出</div>
+                <pre>frontend/src/App.tsx
+frontend/src/styles.css
+frontend/src/components/RightPanel.tsx</pre>
+              </div>
+            </details>
+
+            <details class="tool-card done">
+              <summary><span class="tool-name">已运行 update_plan</span><span class="tool-args">status=completed</span><span class="tool-state">已完成</span></summary>
+              <div class="tool-details">
+                <div class="tool-details-label">参数</div>
+                <pre>{"plan":[{"step":"检查现有页面","status":"completed"}]}</pre>
+                <div class="tool-details-label">输出</div>
+                <pre>计划已更新</pre>
+              </div>
+            </details>
+
+            <section class="approval-card">
+              <strong>需要你的确认</strong>
+              <p>即将修改 frontend/mockup.html，是否允许本次文件写入？</p>
+              <span class="approval-meta">工具：apply_patch · 权限：write</span>
+              <div class="actions">
+                <button class="primary-button" type="button">允许一次</button>
+                <button class="primary-button" type="button">本 Session 允许</button>
+                <button class="danger-button" type="button">拒绝</button>
+              </div>
+            </section>
+          </section>
+
+          <footer class="composer">
+            <textarea aria-label="任务输入" placeholder="描述你要完成的任务…"></textarea>
+            <button class="send-button" type="button" aria-disabled="true">发送</button>
+          </footer>
+        </main>
+
+        <aside class="inspector" aria-label="运行信息">
+          <nav class="tabs" aria-label="运行信息标签页">
+            <button class="tab-button active" type="button" data-tab="plan">Plan</button>
+            <button class="tab-button" type="button" data-tab="diff">Diff</button>
+            <button class="tab-button" type="button" data-tab="trace">Trace</button>
+          </nav>
+
+          <section class="tab-panel active" data-tab-panel="plan">
+            <h2 class="panel-heading-large">执行计划</h2>
+            <div class="plan-item"><span class="plan-status completed">completed</span><p>检查仓库结构<small>已确认前端入口和样式文件</small></p></div>
+            <div class="plan-item"><span class="plan-status in-progress">in_progress</span><p>实现静态页面<small>正在整理三栏工作台视觉稿</small></p></div>
+            <div class="plan-item"><span class="plan-status pending">pending</span><p>验证页面效果<small>等待你调整字体和颜色</small></p></div>
+          </section>
+
+          <section class="tab-panel" data-tab-panel="diff">
+            <h2 class="panel-heading-large">工作树变化</h2>
+            <details class="diff-file" open>
+              <summary><span class="file-name">frontend/mockup.html</span><span class="file-state">modified · 任务变更</span></summary>
+              <div class="diff-details">
+                <div class="diff-meta"><span>任务相对变化</span><span>+18 -2</span></div>
+                <pre class="patch"><span class="patch-line">@@ -1,3 +1,19 @@</span><span class="patch-line delete">-&lt;main&gt;旧版布局&lt;/main&gt;</span><span class="patch-line add">+&lt;main class="workbench"&gt;</span><span class="patch-line add">+  &lt;aside class="sidebar"&gt;项目&lt;/aside&gt;</span><span class="patch-line add">+  &lt;section class="conversation"&gt;对话&lt;/section&gt;</span><span class="patch-line add">+&lt;/main&gt;</span></pre>
+              </div>
+            </details>
+            <details class="diff-file">
+              <summary><span class="file-name">frontend/src/styles.css</span><span class="file-state">pre-existing</span></summary>
+              <div class="diff-details"><div class="diff-meta"><span>Git M</span><span>已存在</span></div><div class="diff-more">文件详情默认收起</div></div>
+            </details>
+          </section>
+
+          <section class="tab-panel" data-tab-panel="trace">
+            <h2 class="panel-heading-large">运行观测</h2>
+            <div class="trace-stats">
+              <div class="trace-stat"><span>运行状态</span><strong>IDLE</strong></div>
+              <div class="trace-stat"><span>Agent 阶段</span><strong>REQUIREMENTS</strong></div>
+              <div class="trace-stat"><span>事件序号</span><strong>98</strong></div>
+            </div>
+            <div class="trace-list">
+              <details class="trace-event"><summary><time>2026-09-01 19:44:27</time><strong>user_input</strong><span>REQUIREMENTS</span></summary><pre>{"text":"帮我设计一个适合 nano-vibe 的前端页面"}</pre></details>
+              <details class="trace-event"><summary><time>2026-09-01 19:44:28</time><strong>model_request</strong><span>REQUIREMENTS</span></summary><pre>{"model":"configured","stream":true}</pre></details>
+              <details class="trace-event"><summary><time>2026-09-01 19:44:31</time><strong>tool_started</strong><span>IMPLEMENT</span></summary><pre>{"tool":"shell","command":"rg --files frontend/src"}</pre></details>
+              <details class="trace-event"><summary><time>2026-09-01 19:44:35</time><strong>approval_requested</strong><span>IMPLEMENT</span></summary><pre>{"tool":"apply_patch","scope":"write","decision":"pending"}</pre></details>
+            </div>
+          </section>
+        </aside>
+      </div>
+    </div>
+
+    <script>
+      const tabs = [...document.querySelectorAll(".tab-button")];
+      const panels = [...document.querySelectorAll("[data-tab-panel]")];
+
+      function activateTab(name) {
+        tabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === name));
+        panels.forEach((panel) => panel.classList.toggle("active", panel.dataset.tabPanel === name));
+      }
+
+      tabs.forEach((tab) => tab.addEventListener("click", () => activateTab(tab.dataset.tab)));
+      activateTab("plan");
+    </script>
+  </body>
+</html>

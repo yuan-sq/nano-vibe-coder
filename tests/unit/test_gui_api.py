@@ -1,4 +1,5 @@
 import asyncio
+import json
 import subprocess
 from pathlib import Path
 
@@ -180,3 +181,51 @@ def test_second_run_is_rejected_while_first_is_active(tmp_path: Path) -> None:
         assert second.status_code == 409
         stopped = client.post(f"/api/v1/runs/{first.json()['run_id']}/stop")
         assert stopped.status_code == 202
+
+
+def test_first_message_captures_diff_baseline_and_diff_api_reuses_it(tmp_path: Path) -> None:
+    project = _repo(tmp_path / "repo")
+    (project / "tracked.txt").write_text("initial\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(project), "add", "tracked.txt"], check=True)
+    subprocess.run(
+        ["git", "-C", str(project), "-c", "user.name=Tests", "-c", "user.email=t@example.test", "commit", "--quiet", "-m", "initial"],
+        check=True,
+    )
+    storage = AppStorage(tmp_path / "app")
+    app = create_app(storage=storage, require_auth=False, runner=_holding_runner, home=tmp_path)
+
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"path": str(project)}).json()["id"]
+        session_id = client.post(f"/api/v1/projects/{project_id}/sessions", json={}).json()["session_id"]
+        response = client.post(f"/api/v1/sessions/{session_id}/messages", json={"text": "修改"})
+        baseline_path = project / ".nano-vibe" / "gui" / session_id / "diff-baseline.json"
+
+        assert response.status_code == 202
+        assert baseline_path.is_file()
+        captured_at = json.loads(baseline_path.read_text(encoding="utf-8"))["captured_at"]
+        (project / "tracked.txt").write_text("changed\n", encoding="utf-8")
+        body = client.get(f"/api/v1/sessions/{session_id}/diff").json()
+        assert body["baseline_captured_at"] == captured_at
+        assert body["entries"][0]["task_changed"] is True
+        client.post(f"/api/v1/runs/{response.json()['run_id']}/stop")
+
+
+def test_trace_api_reads_only_requested_session_trace(tmp_path: Path) -> None:
+    project = _repo(tmp_path / "repo")
+    storage = AppStorage(tmp_path / "app")
+    app = create_app(storage=storage, require_auth=False, runner=_holding_runner, home=tmp_path)
+
+    from nano_vibe.observability.trace import TraceWriter, trace_path
+
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"path": str(project)}).json()["id"]
+        first = client.post(f"/api/v1/projects/{project_id}/sessions", json={}).json()["session_id"]
+        second = client.post(f"/api/v1/projects/{project_id}/sessions", json={}).json()["session_id"]
+        TraceWriter(trace_path(project, first), first).record("first_event", secret="value")
+        TraceWriter(trace_path(project, second), second).record("second_event")
+
+        response = client.get(f"/api/v1/sessions/{first}/trace?limit=1")
+
+        assert response.status_code == 200
+        assert response.json()["items"][0]["event"] == "first_event"
+        assert response.json()["items"][0]["secret"] == "[REDACTED]"

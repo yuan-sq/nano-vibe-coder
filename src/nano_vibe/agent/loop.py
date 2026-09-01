@@ -262,6 +262,9 @@ class AgentLoop:
                 "plan_updated",
                 {"plan": plan, "state": self.machine.current.value},
             )
+        tool = self.registry._tools.get(call.name)
+        if result.ok and getattr(tool, "permission_scope", None) == "write":
+            await self._emit_event("diff_updated", {"tool": call.name})
         return result
 
     def _append_assistant_response(self, response: ModelResponse) -> None:

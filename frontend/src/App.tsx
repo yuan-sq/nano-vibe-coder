@@ -4,7 +4,7 @@ import { GuiApi, websocketUrl, type Project, type Session } from "./lib/api";
 import { GuiSocketSession, type SocketCommand } from "./lib/socket";
 import { useGuiStore } from "./store";
 import { InteractionCard, MessageList } from "./components/MessageList";
-import { RightPanel, ShellPanel } from "./components/RightPanel";
+import { RightPanel } from "./components/RightPanel";
 import "./styles.css";
 
 export function connectionConfig() {
@@ -36,7 +36,7 @@ export default function App() {
   const projects = useQuery({ queryKey: ["projects"], queryFn: () => api.projects() });
   const sessions = useQuery({ queryKey: ["sessions", projectId], queryFn: () => api.sessions(projectId!), enabled: Boolean(projectId) });
   const diff = useQuery({ queryKey: ["diff", activeSessionId], queryFn: () => api.diff(activeSessionId!), enabled: Boolean(activeSessionId) && tab === "diff", refetchInterval: tab === "diff" ? 1_000 : false });
-  const trace = useQuery({ queryKey: ["trace", activeSessionId], queryFn: () => api.trace(activeSessionId!), enabled: Boolean(activeSessionId) && tab === "trace" });
+  const trace = useQuery({ queryKey: ["trace", activeSessionId], queryFn: () => api.trace(activeSessionId!), enabled: Boolean(activeSessionId) && tab === "trace", refetchInterval: tab === "trace" ? 2_000 : false });
   const runtime = activeSessionId ? runtimes[activeSessionId] : undefined;
 
   useEffect(() => {
@@ -60,7 +60,12 @@ export default function App() {
     const socket = new GuiSocketSession({
       url: websocketUrl(config.apiUrl, activeSessionId),
       getLastSeq: () => useGuiStore.getState().runtimes[activeSessionId]?.lastSeq ?? 0,
-      onEvent: ingest,
+      onEvent: (event) => {
+        ingest(event);
+        if (event.type === "diff_updated") {
+          void queryClient.invalidateQueries({ queryKey: ["diff", activeSessionId] });
+        }
+      },
       onResync: (latestSeq) => {
         if (disposed || resyncing) return;
         resyncing = true;
@@ -103,7 +108,7 @@ export default function App() {
       socket.stop();
       if (socketRef.current === socket) socketRef.current = null;
     };
-  }, [activeSessionId, api, config.apiUrl, hydrate, ingest, setConnected, setLastSeq]);
+  }, [activeSessionId, api, config.apiUrl, hydrate, ingest, queryClient, setConnected, setLastSeq]);
 
   const chooseSession = (session: Session) => setActiveSession(session.session_id);
   const sendSocketCommand = (command: SocketCommand) => socketRef.current?.send(command);
@@ -144,7 +149,6 @@ export default function App() {
       <section className="conversation"><div className="conversation-heading"><div><h1>{activeSessionId ? "工作 Session" : "选择一个 Session"}</h1><small>{runtime?.runtimeState ?? "IDLE"} · Agent {runtime?.agentState ?? "REQUIREMENTS"}</small></div>{runtime?.runtimeState === "RUNNING" && runtime.runId && <button className="stop" onClick={() => void api.stopRun(runtime.runId!)}>停止</button>}</div>{error && <div className="error">{error}</div>}<MessageList messages={runtime?.messages ?? []} />{runtime?.pendingInteraction && <InteractionCard interaction={runtime.pendingInteraction} onResolve={resolveInteraction} />}</section>
       <RightPanel tab={tab} onTab={setTab} runtime={runtime} diff={diff.data} trace={trace.data} />
     </div>
-    <ShellPanel runtime={runtime} />
     <footer className="composer"><textarea value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} placeholder="描述你要完成的任务…" disabled={!activeSessionId} /><button onClick={() => void send()} disabled={!activeSessionId || !text.trim()}>发送</button></footer>
   </main>;
 }

@@ -12,7 +12,7 @@ from nano_vibe.gui.diff import GitDiffService
 from nano_vibe.gui.shell import StreamingShellRunner
 from nano_vibe.gui.trace import read_trace
 from nano_vibe.models.base import ModelResponse, ToolCall
-from nano_vibe.observability.trace import TraceWriter
+from nano_vibe.observability.trace import TraceWriter, trace_path
 from nano_vibe.tools.registry import ToolRegistry
 from nano_vibe.tools.transition import TransitionTool
 
@@ -77,6 +77,34 @@ def test_trace_reader_filters_events(tmp_path: Path) -> None:
     result = read_trace(path, event="tool_end")
     assert result.total == 1
     assert result.items[0]["tool"] == "shell"
+
+
+def test_trace_writer_uses_shared_session_path(tmp_path: Path) -> None:
+    path = trace_path(tmp_path, "session-1")
+    writer = TraceWriter(path, "session-1")
+    writer.record("model_request", state="PLAN")
+
+    assert path == tmp_path / ".nano-vibe" / "traces" / "session-1.jsonl"
+    assert path.is_file()
+
+
+def test_trace_reader_paginates_and_ignores_corrupt_tail(tmp_path: Path) -> None:
+    path = tmp_path / "run.jsonl"
+    writer = TraceWriter(path, "session-1")
+    for index in range(3):
+        writer.record("model_request", index=index, password="secret")
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write('{"event": "incomplete"')
+
+    first = read_trace(path, offset=0, limit=2)
+    second = read_trace(path, offset=2, limit=2)
+    assert first.total == 3
+    assert first.next_offset == 2
+    assert first.has_more is True
+    assert len(first.items) == 2
+    assert second.next_offset == 3
+    assert second.has_more is False
+    assert second.items[0]["password"] == "[REDACTED]"
 
 
 class _Model:

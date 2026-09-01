@@ -28,8 +28,8 @@ uv run nano-vibe gui
 `nano-vibe gui` 仅绑定 `127.0.0.1`，自动启动 FastAPI 与前端 Node 服务并打开
 浏览器。`--no-open` 可关闭自动打开，`--port PORT` 指定前端端口，`--dev` 使用
 Vite 开发服务器。浏览器关闭不会停止后台 Agent；重连后会回放内存事件或从
-SessionSnapshot 恢复。GUI 使用多项目/Session 工作台、Plan、Diff、Trace、只读
-Shell 输出和阻塞审批卡片；同一时间全局只允许一个 Agent 任务。
+SessionSnapshot 恢复。GUI 使用多项目/Session 工作台、Plan、Diff、Trace 和阻塞
+审批卡片；Shell 命令与结果显示在消息流工具卡中，同一时间全局只允许一个 Agent 任务。
 
 `--resume SESSION_ID` 只恢复指定的 JSON 快照；不会自动猜测或恢复会话。
 `--full-access` 只切换应用层权限策略，normal 模式会对 shell、写文件和网络
@@ -65,8 +65,8 @@ uv run ruff check src tests
 uv run pyright
 ```
 
-trace 保存在被忽略的 `runs/`，会话快照默认保存在目标仓库的
-`.nano-vibe/sessions/`。配置支持按状态静态选择模型并按顺序 fallback。
+trace 保存在目标仓库被忽略的 `.nano-vibe/traces/<session_id>.jsonl`，会话快照默认
+保存在目标仓库的 `.nano-vibe/sessions/`。配置支持按状态静态选择模型并按顺序 fallback。
 
 V3 仍不包含 Goal 系统、OS 级沙箱、评测框架、远程访问、移动端、GUI 编辑器、
 交互式终端、Session 永久删除，以及 Tavily Crawl/Map/Research API。Chainlit

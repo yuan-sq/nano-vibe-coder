@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from nano_vibe.config import AppConfig
+from nano_vibe.observability.trace import trace_path
 from nano_vibe.session_store import SessionStore, SessionStoreError
 
 from .agent_runner import GuiAgentRunner
@@ -411,7 +412,8 @@ def create_app(
     @app.post("/api/v1/sessions/{session_id}/messages", status_code=202, dependencies=[Depends(auth)])
     async def send_message(session_id: str, payload: MessageCreate) -> dict[str, Any]:
         try:
-            state.storage.get_session(session_id)
+            workspace = _session_workspace(session_id)
+            GitDiffService(workspace, session_id).ensure_baseline()
             run_id = await state.coordinator.start(session_id, payload.text)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail={"code": "session_not_found"}) from exc
@@ -438,7 +440,7 @@ def create_app(
     @app.get("/api/v1/sessions/{session_id}/diff", dependencies=[Depends(auth)])
     async def session_diff(session_id: str) -> dict[str, object]:
         workspace = _session_workspace(session_id)
-        return GitDiffService(workspace).snapshot().to_dict()
+        return GitDiffService(workspace, session_id).snapshot().to_dict()
 
     @app.get("/api/v1/sessions/{session_id}/trace", dependencies=[Depends(auth)])
     async def session_trace(
@@ -448,10 +450,24 @@ def create_app(
         limit: int = 100,
     ) -> dict[str, object]:
         workspace = _session_workspace(session_id)
-        trace_root = workspace / "runs"
-        candidates = sorted(trace_root.glob("**/*.jsonl")) if trace_root.is_dir() else []
-        page = read_trace(candidates[-1], event=event, offset=offset, limit=limit) if candidates else read_trace(trace_root / "missing.jsonl")
-        return {"items": page.items, "total": page.total}
+        try:
+            page = read_trace(
+                trace_path(workspace, session_id),
+                event=event,
+                offset=offset,
+                limit=limit,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "invalid_trace_pagination", "message": str(exc)},
+            ) from exc
+        return {
+            "items": page.items,
+            "next_offset": page.next_offset,
+            "has_more": page.has_more,
+            "total": page.total,
+        }
 
     @app.websocket("/api/v1/ws/{session_id}")
     async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:

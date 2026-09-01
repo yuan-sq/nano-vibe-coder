@@ -73,7 +73,6 @@ export interface RuntimeView {
   messages: ChatMessage[];
   pendingInteraction: PendingInteraction | null;
   plan: PlanItem[];
-  shell: Array<{ stream: string; text: string }>;
   lastSeq: number;
 }
 
@@ -85,7 +84,6 @@ export const initialRuntime = (sessionId: string): RuntimeView => ({
   messages: [],
   pendingInteraction: null,
   plan: [],
-  shell: [],
   lastSeq: 0
 });
 
@@ -167,8 +165,6 @@ export function applyEvent(state: RuntimeView, event: UIEvent): RuntimeView {
         agentState: stateFromEvent(),
         plan: Array.isArray(event.payload.plan) ? parsePlanItems(event.payload.plan) : next.plan
       };
-    case "shell_chunk":
-      return { ...next, shell: [...next.shell, { stream: String(event.payload.stream ?? "stdout"), text: String(event.payload.text ?? "") }] };
     case "error":
       return { ...next, runtimeState: "ERROR" };
     case "run_completed":

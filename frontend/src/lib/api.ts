@@ -2,6 +2,34 @@ import type { PendingInteraction, UIEvent } from "./protocol";
 
 export interface Project { id: string; path: string; name: string; created_at: string; last_opened_at: string }
 export interface Session { session_id: string; project_id: string; title: string; archived: boolean; created_at: string; updated_at: string }
+export interface DiffEntry {
+  path: string;
+  status: string;
+  git_status: string;
+  staged: boolean;
+  unstaged: boolean;
+  deleted: boolean;
+  task_changed: boolean;
+  pre_existing: boolean;
+  binary: boolean;
+  too_large: boolean;
+  size: number;
+  staged_patch: string | null;
+  unstaged_patch: string | null;
+  content?: string | null;
+}
+export interface DiffSnapshot {
+  is_git: boolean;
+  head: string | null;
+  baseline_captured_at: string;
+  entries: DiffEntry[];
+}
+export interface TracePage {
+  items: Array<Record<string, unknown>>;
+  next_offset: number;
+  has_more: boolean;
+  total: number;
+}
 
 export class ApiError extends Error {
   readonly status: number;
@@ -37,8 +65,15 @@ export class GuiApi {
   async session(sessionId: string): Promise<{ metadata: Session; snapshot: Record<string, unknown> | null }> { return this.request(`/api/v1/sessions/${sessionId}`); }
   async sendMessage(sessionId: string, text: string): Promise<{ run_id: string; status: string }> { return this.request(`/api/v1/sessions/${sessionId}/messages`, { method: "POST", body: JSON.stringify({ text }) }); }
   async stopRun(runId: string): Promise<{ run_id: string; status: string }> { return this.request(`/api/v1/runs/${runId}/stop`, { method: "POST" }); }
-  async diff(sessionId: string): Promise<Record<string, unknown>> { return this.request(`/api/v1/sessions/${sessionId}/diff`); }
-  async trace(sessionId: string): Promise<Record<string, unknown>> { return this.request(`/api/v1/sessions/${sessionId}/trace`); }
+  async diff(sessionId: string): Promise<DiffSnapshot> { return this.request(`/api/v1/sessions/${sessionId}/diff`); }
+  async trace(sessionId: string, options: { event?: string; offset?: number; limit?: number } = {}): Promise<TracePage> {
+    const query = new URLSearchParams();
+    if (options.event) query.set("event", options.event);
+    if (options.offset !== undefined) query.set("offset", String(options.offset));
+    if (options.limit !== undefined) query.set("limit", String(options.limit));
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return this.request(`/api/v1/sessions/${sessionId}/trace${suffix}`);
+  }
 }
 
 export function websocketUrl(baseUrl: string, sessionId: string): string {

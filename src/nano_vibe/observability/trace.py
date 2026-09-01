@@ -10,6 +10,13 @@ from typing import Any
 _SENSITIVE_KEYS = {"api_key", "access_token", "authorization", "password", "secret"}
 
 
+def trace_path(workspace: str | Path, session_id: str) -> Path:
+    """Return the single canonical trace path for a GUI/V2 session."""
+    if not isinstance(session_id, str) or not session_id or Path(session_id).name != session_id:
+        raise ValueError("session_id must be a safe non-empty identifier")
+    return Path(workspace).resolve() / ".nano-vibe" / "traces" / f"{session_id}.jsonl"
+
+
 class TraceWriter:
     def __init__(self, path: str | Path, session_id: str) -> None:
         self.path = Path(path)

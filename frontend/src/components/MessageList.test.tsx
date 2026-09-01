@@ -2,7 +2,6 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { InteractionCard, MessageList } from "./MessageList";
 import { MarkdownContent } from "./MarkdownContent";
-import { ShellPanel } from "./RightPanel";
 
 describe("InteractionCard", () => {
   it("renders user requests as answer controls instead of permission buttons", () => {
@@ -80,13 +79,4 @@ describe("MessageList", () => {
     expect(screen.getByText("运行中 shell node bs_test.mjs")).toBeInTheDocument();
   });
 
-  it("lets the user collapse the shell output panel", () => {
-    render(<ShellPanel runtime={{ sessionId: "s", runId: null, runtimeState: "IDLE", agentState: "REQUIREMENTS", messages: [], pendingInteraction: null, plan: [], shell: [{ stream: "stdout", text: "ok" }], lastSeq: 0 }} />);
-
-    const details = screen.getByText("Shell 输出").closest("details");
-    expect(details).not.toBeNull();
-    expect(details).toHaveAttribute("open");
-    fireEvent.click(screen.getByText("Shell 输出"));
-    expect(details).not.toHaveAttribute("open");
-  });
 });

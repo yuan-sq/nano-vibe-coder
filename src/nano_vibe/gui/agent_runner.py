@@ -155,7 +155,7 @@ class GuiAgentRunner:
         stop_event: asyncio.Event,
     ) -> None:
         workspace = self.workspace_for_session(session_id)
-        GitDiffService(workspace, session_id).ensure_baseline()
+        await asyncio.to_thread(GitDiffService(workspace, session_id).ensure_baseline)
         holder: dict[str, Session] = {}
 
         async def on_pending(interaction: PendingInteraction) -> None:

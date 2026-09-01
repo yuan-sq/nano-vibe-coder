@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from nano_vibe.gui import diff as diff_module
 from nano_vibe.gui.diff import GitDiffService
 
 
@@ -210,6 +211,225 @@ def test_invalid_utf8_file_is_binary_and_json_path_is_safe(tmp_path: Path) -> No
     assert entry["unstaged_patch"] is None
     json.dumps(body, ensure_ascii=False)
     assert "\\udcff" in entry["path"]
+
+
+def test_non_utf8_filename_task_patch_is_json_safe(tmp_path: Path) -> None:
+    if os.name != "posix":
+        pytest.skip("requires Unix byte paths")
+    repo = _repo(tmp_path / "repo")
+    invalid_name = os.fsdecode(b"changed-\xff.txt")
+    invalid = repo / invalid_name
+    try:
+        fd = os.open(os.fsencode(invalid), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    except OSError:
+        pytest.skip("filesystem does not support invalid UTF-8 names")
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(b"old\n")
+
+    service = GitDiffService(repo, "session-1")
+    service.ensure_baseline()
+    invalid.write_bytes(b"new\n")
+
+    body = service.snapshot().to_dict()
+    entry = body["entries"][0]  # type: ignore[index]
+    assert entry["task_patch"] is not None
+    assert "\udcff" not in entry["task_patch"]
+    json.dumps(body, ensure_ascii=False).encode("utf-8")
+
+
+def test_directory_symlink_never_reads_workspace_external_contents(tmp_path: Path) -> None:
+    repo = _repo(tmp_path / "repo")
+    nested = repo / "nested"
+    nested.mkdir()
+    tracked = nested / "tracked.txt"
+    tracked.write_text("inside workspace\n", encoding="utf-8")
+    _commit_all(repo)
+    service = GitDiffService(repo, "session-1")
+    service.ensure_baseline()
+
+    external = tmp_path / "external"
+    external.mkdir()
+    (external / "tracked.txt").write_text("WORKSPACE EXTERNAL SECRET\n", encoding="utf-8")
+    tracked.unlink()
+    nested.rmdir()
+    nested.symlink_to(external, target_is_directory=True)
+
+    body = service.snapshot().to_dict()
+    encoded = json.dumps(body, ensure_ascii=False)
+    assert "WORKSPACE EXTERNAL SECRET" not in encoded
+    entry = body["entries"][0]  # type: ignore[index]
+    assert entry["content"] is None
+    assert entry["task_patch"] is None
+
+
+def test_patch_outputs_share_a_hard_total_limit(tmp_path: Path, monkeypatch) -> None:
+    repo = _repo(tmp_path / "repo")
+    tracked = repo / "tracked.txt"
+    tracked.write_text("old\n", encoding="utf-8")
+    _commit_all(repo)
+    service = GitDiffService(repo, "session-1")
+    service.ensure_baseline()
+    tracked.write_text("new\n", encoding="utf-8")
+    _git(repo, "add", "tracked.txt")
+    tracked.write_text("newer\n", encoding="utf-8")
+    oversized = "x" * (diff_module._MAX_TOTAL_PATCH_BYTES * 2)
+    monkeypatch.setattr(service, "_patch", lambda *_args, **_kwargs: oversized)
+    monkeypatch.setattr(service, "_task_patch", lambda *_args, **_kwargs: oversized)
+
+    body = service.snapshot().to_dict()
+    entry = body["entries"][0]  # type: ignore[index]
+    patch_values = [
+        entry["staged_patch"],
+        entry["unstaged_patch"],
+        entry["task_patch"],
+    ]
+    assert sum(len(value.encode("utf-8")) for value in patch_values if value) <= diff_module._MAX_TOTAL_PATCH_BYTES
+
+
+def test_snapshot_file_contents_share_a_hard_total_limit(tmp_path: Path, monkeypatch) -> None:
+    repo = _repo(tmp_path / "repo")
+    first = repo / "first.txt"
+    second = repo / "second.txt"
+    first.write_text("old\n", encoding="utf-8")
+    second.write_text("old\n", encoding="utf-8")
+    _commit_all(repo)
+    service = GitDiffService(repo, "session-1")
+    service.ensure_baseline()
+    first.write_text("first-new\n", encoding="utf-8")
+    second.write_text("second-new\n", encoding="utf-8")
+    monkeypatch.setattr(diff_module, "_MAX_DIFF_CONTENT_BYTES", 12, raising=False)
+
+    body = service.snapshot().to_dict()
+
+    assert sum(
+        len(entry["content"].encode("utf-8"))
+        for entry in body["entries"]  # type: ignore[index]
+        if entry["content"] is not None
+    ) <= 12
+    assert body["truncated"] is True
+
+
+def test_staged_patch_uses_bounded_blobs_instead_of_git_worktree_diff(
+    tmp_path: Path, monkeypatch
+) -> None:
+    repo = _repo(tmp_path / "repo")
+    tracked = repo / "tracked.txt"
+    tracked.write_text("old\n", encoding="utf-8")
+    _commit_all(repo)
+    service = GitDiffService(repo, "session-1")
+    service.ensure_baseline()
+    tracked.write_text("new\n", encoding="utf-8")
+    _git(repo, "add", "tracked.txt")
+    original = service._run_git
+    commands: list[tuple[str, ...]] = []
+
+    def record(*arguments: str, **kwargs):
+        commands.append(arguments)
+        return original(*arguments, **kwargs)
+
+    monkeypatch.setattr(service, "_run_git", record)
+
+    entry = service.snapshot().to_dict()["entries"][0]  # type: ignore[index]
+
+    assert entry["staged_patch"] is not None
+    assert not any(arguments and arguments[0] == "diff" for arguments in commands)
+
+
+def test_staged_deletion_keeps_a_patch_without_reading_the_worktree(tmp_path: Path) -> None:
+    repo = _repo(tmp_path / "repo")
+    tracked = repo / "tracked.txt"
+    tracked.write_text("old\n", encoding="utf-8")
+    _commit_all(repo)
+    service = GitDiffService(repo, "session-1")
+    service.ensure_baseline()
+    tracked.unlink()
+    _git(repo, "add", "tracked.txt")
+
+    entry = service.snapshot().to_dict()["entries"][0]  # type: ignore[index]
+
+    assert entry["staged_patch"] is not None
+    assert "-old" in entry["staged_patch"]
+
+
+def test_baseline_metadata_and_contents_are_bounded_and_marked(tmp_path: Path, monkeypatch) -> None:
+    repo = _repo(tmp_path / "repo")
+    service = GitDiffService(repo, "session-1")
+    statuses = {
+        f"file-{index:05d}.txt": " M"
+        for index in range(diff_module._MAX_BASELINE_PATHS + 1)
+    }
+    files = {
+        path: {
+            "sha256": "a" * 64,
+            "size": 1024,
+            "binary": False,
+            "symlink": False,
+            "mode": 0o644,
+        }
+        for path in statuses
+    }
+    monkeypatch.setattr(service, "_is_git", lambda: True)
+    monkeypatch.setattr(service, "_head", lambda: "head")
+    monkeypatch.setattr(service, "_git_status", lambda: statuses)
+    monkeypatch.setattr(service, "_file_summaries", lambda: files)
+    monkeypatch.setattr(service, "_read_current_text", lambda _path: "x" * 1024)
+
+    baseline = service.ensure_baseline()
+    assert len(baseline.statuses) <= diff_module._MAX_BASELINE_PATHS
+    assert len(baseline.files) <= diff_module._MAX_BASELINE_PATHS
+    payload = json.loads((repo / ".nano-vibe" / "gui" / "session-1" / "diff-baseline.json").read_text())
+    assert payload["truncated"] is True
+    assert sum(len(value.encode("utf-8")) for value in payload["contents"].values()) <= diff_module._MAX_BASELINE_CONTENT_BYTES
+
+
+def test_failed_git_status_does_not_persist_an_empty_git_baseline(tmp_path: Path, monkeypatch) -> None:
+    repo = _repo(tmp_path / "repo")
+    service = GitDiffService(repo, "session-1")
+    monkeypatch.setattr(service, "_is_git", lambda: True)
+    monkeypatch.setattr(service, "_head", lambda: "head")
+    def failed_status() -> dict[str, str]:
+        service._git_capture_failed = True
+        return {}
+
+    monkeypatch.setattr(service, "_git_status", failed_status)
+    monkeypatch.setattr(service, "_file_summaries", dict)
+
+    baseline = service.ensure_baseline()
+    assert baseline.is_git is False
+    payload = json.loads((repo / ".nano-vibe" / "gui" / "session-1" / "diff-baseline.json").read_text())
+    assert payload["is_git"] is False
+
+
+def test_failed_head_lookup_marks_baseline_capture_failed(
+    tmp_path: Path, monkeypatch
+) -> None:
+    repo = _repo(tmp_path / "repo")
+    service = GitDiffService(repo, "session-1")
+    results = iter(
+        [
+            subprocess.CompletedProcess([], 128, b"", b"broken HEAD"),
+            subprocess.CompletedProcess([], 128, b"", b"cannot enumerate refs"),
+        ]
+    )
+    monkeypatch.setattr(service, "_run_git", lambda *_args, **_kwargs: next(results))
+
+    assert service._head() is None
+    assert service._git_capture_failed is True
+
+
+def test_unborn_head_is_a_valid_empty_baseline(tmp_path: Path, monkeypatch) -> None:
+    repo = _repo(tmp_path / "repo")
+    service = GitDiffService(repo, "session-1")
+    results = iter(
+        [
+            subprocess.CompletedProcess([], 128, b"", b"unborn HEAD"),
+            subprocess.CompletedProcess([], 0, b"", b""),
+        ]
+    )
+    monkeypatch.setattr(service, "_run_git", lambda *_args, **_kwargs: next(results))
+
+    assert service._head() is None
+    assert service._git_capture_failed is False
 
 
 def test_large_file_is_classified_before_patch_capture(tmp_path: Path, monkeypatch) -> None:

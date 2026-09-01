@@ -13,7 +13,8 @@ from nano_vibe.config import AppConfig
 from nano_vibe.gui.diff import GitDiffService
 from nano_vibe.gui.runtime import PendingInteraction
 from nano_vibe.permissions import ApprovalDecision
-from nano_vibe.session import Session
+from nano_vibe.session import Session, session_store_for_config
+from nano_vibe.session_store import SessionStoreError
 
 
 class InteractionBroker:
@@ -201,5 +202,22 @@ class GuiAgentRunner:
     async def resolve(self, session_id: str, interaction_id: str, decision: str) -> bool:
         broker = self.brokers.get(session_id)
         if broker is None:
+            await self._clear_stale_pending(session_id, interaction_id)
             return False
         return await broker.resolve(interaction_id, decision)
+
+    async def _clear_stale_pending(self, session_id: str, interaction_id: str) -> None:
+        """Drop a persisted interaction that has no in-process broker future."""
+
+        try:
+            workspace = self.workspace_for_session(session_id)
+            store = session_store_for_config(self.config, workspace)
+            snapshot = store.load(session_id)
+            pending = snapshot.pending_interaction
+            if pending is None or pending.get("interaction_id") != interaction_id:
+                return
+            snapshot.pending_interaction = None
+            snapshot.runtime_state = "PAUSED"
+            store.save(snapshot)
+        except (KeyError, OSError, SessionStoreError):
+            return

@@ -120,6 +120,29 @@ async def test_session_resume_restores_history_and_counters(tmp_path: Path) -> N
     assert resumed.loop._turns == original.loop._turns
 
 
+def test_session_resume_permission_mode_override_is_explicit(tmp_path: Path) -> None:
+    store = SessionStore(tmp_path / "sessions")
+    store.save(
+        SessionSnapshot(
+            session_id="session-1",
+            workspace=str(tmp_path.resolve()),
+            permission_mode=PermissionMode.NORMAL.value,
+        )
+    )
+
+    resumed = Session.resume(
+        PlainModel(),
+        tmp_path,
+        "session-1",
+        session_store=store,
+        permission_mode="full-access",
+    )
+
+    assert resumed.permission_mode is PermissionMode.FULL_ACCESS
+    assert resumed.registry.permission_policy is not None
+    assert resumed.registry.permission_policy.mode is PermissionMode.FULL_ACCESS
+
+
 @pytest.mark.asyncio
 async def test_session_resume_restores_tool_specific_session_grants(tmp_path: Path) -> None:
     store = SessionStore(tmp_path / "sessions")

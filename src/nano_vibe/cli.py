@@ -65,7 +65,8 @@ def cli(
         ui.console.print(f"[red]Configuration error:[/red] {exc}")
         ui.console.print("Copy config.example.toml to config.toml and fill in your model settings.")
         raise typer.Exit(1) from exc
-    mode = "full-access" if full_access else app_config.runtime.permission_mode
+    permission_mode_override = PermissionMode.FULL_ACCESS if full_access else None
+    mode = permission_mode_override or app_config.runtime.permission_mode
     session = Session.from_config(
         app_config,
         workspace,
@@ -76,11 +77,10 @@ def cli(
     if resume is not None:
         try:
             snapshot = session.session_store.load(resume)
-            if not full_access:
-                session.permission_mode = PermissionMode.parse(snapshot.permission_mode)
-                if session.registry.permission_policy is not None:
-                    session.registry.permission_policy.mode = session.permission_mode
-            session.restore_snapshot(snapshot)
+            session.restore_snapshot(
+                snapshot,
+                permission_mode_override=permission_mode_override,
+            )
         except SessionStoreError as exc:
             ui.console.print(f"[red]Session resume error:[/red] {exc}")
             raise typer.Exit(1) from exc

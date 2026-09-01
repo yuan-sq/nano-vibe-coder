@@ -189,16 +189,26 @@ class Session:
                 policy.revoke_session(tool_name)
             raise
 
-    def restore_snapshot(self, snapshot: SessionSnapshot) -> None:
+    def restore_snapshot(
+        self,
+        snapshot: SessionSnapshot,
+        *,
+        permission_mode_override: PermissionMode | str | None = None,
+    ) -> None:
         if snapshot.workspace and Path(snapshot.workspace).resolve() != self.workspace:
             raise SessionStoreError(
                 f"session workspace does not match current workspace: {snapshot.workspace}"
             )
         try:
-            self.permission_mode = PermissionMode.parse(snapshot.permission_mode)
+            snapshot_mode = PermissionMode.parse(snapshot.permission_mode)
+            self.permission_mode = (
+                snapshot_mode
+                if permission_mode_override is None
+                else PermissionMode.parse(permission_mode_override)
+            )
         except ValueError as exc:
             raise SessionStoreError(
-                f"invalid permission mode in session snapshot: {snapshot.permission_mode}"
+                "invalid permission mode in session snapshot or restore override"
             ) from exc
         if self.registry.permission_policy is not None:
             self.registry.permission_policy.mode = self.permission_mode
@@ -229,12 +239,21 @@ class Session:
         session_id: str,
         *,
         session_store: SessionStore | None = None,
+        permission_mode_override: PermissionMode | str | None = None,
         **kwargs: Any,
     ) -> Session:
         workspace_path = Path(workspace).resolve()
         store = session_store or SessionStore(workspace_path / ".nano-vibe" / "sessions")
         snapshot = store.load(session_id)
-        mode = kwargs.pop("permission_mode", snapshot.permission_mode)
+        legacy_permission_mode = kwargs.pop("permission_mode", None)
+        if permission_mode_override is not None and legacy_permission_mode is not None:
+            raise TypeError("pass only one permission mode resume override")
+        override = (
+            permission_mode_override
+            if permission_mode_override is not None
+            else legacy_permission_mode
+        )
+        mode = override if override is not None else snapshot.permission_mode
         session = cls(
             model,
             workspace_path,
@@ -243,7 +262,7 @@ class Session:
             permission_mode=mode,
             **kwargs,
         )
-        session.restore_snapshot(snapshot)
+        session.restore_snapshot(snapshot, permission_mode_override=override)
         return session
 
     from_snapshot = resume

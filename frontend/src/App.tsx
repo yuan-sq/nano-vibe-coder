@@ -57,6 +57,15 @@ export default function App() {
     if (!activeSessionId) return;
     let disposed = false;
     let resyncing = false;
+    const resyncSession = () => {
+      void api.session(activeSessionId).then((value) => {
+        if (disposed) return;
+        hydrate(activeSessionId, value.snapshot, "resync");
+        setError(null);
+      }).catch(() => {
+        if (!disposed) setError("同步 Session 状态失败，请稍后重试");
+      });
+    };
     const socket = new GuiSocketSession({
       url: websocketUrl(config.apiUrl, activeSessionId),
       getLastSeq: () => useGuiStore.getState().runtimes[activeSessionId]?.lastSeq ?? 0,
@@ -84,7 +93,7 @@ export default function App() {
       },
       onCommandResult: (result) => {
         if (result.type === "interaction_result" && result.ok === false) {
-          setError("交互已失效，请重新加载 Session");
+          resyncSession();
         } else if (result.type === "error") {
           setError(String(result.message ?? result.code ?? "实时命令失败"));
         }

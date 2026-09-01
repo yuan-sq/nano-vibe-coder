@@ -23,6 +23,14 @@ class PlainModel:
         return ModelResponse(content="done")
 
 
+def _runner_config() -> AppConfig:
+    return AppConfig(
+        active_model=ModelConfig("test", "http://example.test", "test"),
+        models={"test": ModelConfig("test", "http://example.test", "test")},
+        runtime=RuntimeConfig(permission_mode="normal"),
+    )
+
+
 @pytest.mark.asyncio
 async def test_interaction_broker_preserves_explicit_approval_decision() -> None:
     emitted: list[tuple[str, dict[str, Any]]] = []
@@ -37,6 +45,30 @@ async def test_interaction_broker_preserves_explicit_approval_decision() -> None
 
     assert await broker.resolve(interaction_id, "session") is True
     assert await pending == "session"
+
+
+@pytest.mark.asyncio
+async def test_resolve_clears_stale_pending_interaction_without_a_broker(tmp_path: Path) -> None:
+    store = SessionStore(tmp_path / ".nano-vibe" / "sessions")
+    store.save(
+        SessionSnapshot(
+            session_id="session-1",
+            workspace=str(tmp_path.resolve()),
+            runtime_state="AWAITING_APPROVAL",
+            pending_interaction={
+                "interaction_id": "stale-1",
+                "kind": "approval",
+                "tool_name": "apply_patch",
+            },
+        )
+    )
+    runner = GuiAgentRunner(_runner_config(), lambda _session_id: tmp_path)
+
+    assert await runner.resolve("session-1", "stale-1", "session") is False
+
+    snapshot = store.load("session-1")
+    assert snapshot.pending_interaction is None
+    assert snapshot.runtime_state == "PAUSED"
 
 
 @pytest.mark.asyncio

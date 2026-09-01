@@ -8,6 +8,7 @@ state-machine permissions.
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from enum import Enum
@@ -66,6 +67,7 @@ class PermissionPolicy:
         self.approve = approve
         self._session_grants = set(session_grants or ())
         self._on_session_grant = on_session_grant
+        self._session_grant_locks: dict[str, asyncio.Lock] = {}
 
     @property
     def session_grants(self) -> set[str]:
@@ -110,52 +112,54 @@ class PermissionPolicy:
     ) -> ToolError | None:
         if not self.requires_approval(scope):
             return None
-        if tool_name in self._session_grants:
-            return None
-        if self.approve is None:
-            return ToolError(
-                code="permission_denied",
-                message=f"permission denied for tool: {tool_name}",
-                details={"tool": tool_name, "scope": scope, "mode": self.mode.value},
-                retryable=False,
-            )
-        try:
-            approved = self.approve(tool_name, arguments)
-            if inspect.isawaitable(approved):
-                approved = await approved
-            decision = ApprovalDecision.parse(approved)
-        except Exception as exc:  # noqa: BLE001 - approval callbacks are user integrations
-            return ToolError(
-                code="permission_approval_error",
-                message=str(exc) or "permission approval failed",
-                details={"tool": tool_name, "scope": scope},
-                retryable=True,
-            )
-        if decision is ApprovalDecision.DENY:
-            return ToolError(
-                code="permission_denied",
-                message=f"permission denied for tool: {tool_name}",
-                details={"tool": tool_name, "scope": scope, "mode": self.mode.value},
-                retryable=False,
-            )
-        if decision is ApprovalDecision.SESSION:
+        lock = self._session_grant_locks.setdefault(tool_name, asyncio.Lock())
+        async with lock:
             if tool_name in self._session_grants:
                 return None
-            self._session_grants.add(tool_name)
-            try:
-                if self._on_session_grant is not None:
-                    persisted = self._on_session_grant()
-                    if inspect.isawaitable(persisted):
-                        await persisted
-            except Exception as exc:  # noqa: BLE001 - persistence is an integration boundary
-                self._session_grants.discard(tool_name)
+            if self.approve is None:
                 return ToolError(
-                    code="permission_persistence_error",
-                    message=str(exc) or "could not persist session permission",
+                    code="permission_denied",
+                    message=f"permission denied for tool: {tool_name}",
+                    details={"tool": tool_name, "scope": scope, "mode": self.mode.value},
+                    retryable=False,
+                )
+            try:
+                approved = self.approve(tool_name, arguments)
+                if inspect.isawaitable(approved):
+                    approved = await approved
+                decision = ApprovalDecision.parse(approved)
+            except Exception as exc:  # noqa: BLE001 - approval callbacks are user integrations
+                return ToolError(
+                    code="permission_approval_error",
+                    message=str(exc) or "permission approval failed",
                     details={"tool": tool_name, "scope": scope},
                     retryable=True,
                 )
-        return None
+            if decision is ApprovalDecision.DENY:
+                return ToolError(
+                    code="permission_denied",
+                    message=f"permission denied for tool: {tool_name}",
+                    details={"tool": tool_name, "scope": scope, "mode": self.mode.value},
+                    retryable=False,
+                )
+            if decision is ApprovalDecision.SESSION:
+                if tool_name in self._session_grants:
+                    return None
+                self._session_grants.add(tool_name)
+                try:
+                    if self._on_session_grant is not None:
+                        persisted = self._on_session_grant()
+                        if inspect.isawaitable(persisted):
+                            await persisted
+                except Exception as exc:  # noqa: BLE001 - persistence is an integration boundary
+                    self._session_grants.discard(tool_name)
+                    return ToolError(
+                        code="permission_persistence_error",
+                        message=str(exc) or "could not persist session permission",
+                        details={"tool": tool_name, "scope": scope},
+                        retryable=True,
+                    )
+            return None
 
     async def authorize(
         self, tool_name: str, scope: str, arguments: Mapping[str, Any]

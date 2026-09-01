@@ -341,6 +341,60 @@ def test_session_api_uses_configured_session_directory(tmp_path: Path) -> None:
         assert response.json()["snapshot"]["session_id"] == session_id
 
 
+def test_websocket_reports_stale_cleanup_persistence_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = _repo(tmp_path / "repo")
+    config = AppConfig(
+        active_model=ModelConfig("test", "http://example.test", "test"),
+        models={"test": ModelConfig("test", "http://example.test", "test")},
+        runtime=RuntimeConfig(permission_mode="normal"),
+    )
+    storage = AppStorage(tmp_path / "app")
+    app = create_app(
+        storage=storage,
+        require_auth=False,
+        agent_config=config,
+        home=tmp_path,
+    )
+
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"path": str(project)}).json()["id"]
+        session_id = client.post(
+            f"/api/v1/projects/{project_id}/sessions", json={}
+        ).json()["session_id"]
+        SessionStore(project / ".nano-vibe" / "sessions").save(
+            SessionSnapshot(
+                session_id=session_id,
+                workspace=str(project.resolve()),
+                runtime_state="AWAITING_APPROVAL",
+                pending_interaction={
+                    "interaction_id": "stale-1",
+                    "kind": "approval",
+                    "tool_name": "apply_patch",
+                },
+            )
+        )
+
+        def fail_save(_store: SessionStore, _snapshot: SessionSnapshot) -> Path:
+            raise OSError("disk full")
+
+        monkeypatch.setattr(SessionStore, "save", fail_save)
+        with client.websocket_connect(f"/api/v1/ws/{session_id}") as websocket:
+            websocket.send_json(
+                {
+                    "type": "resolve_approval",
+                    "interaction_id": "stale-1",
+                    "decision": "session",
+                }
+            )
+            assert websocket.receive_json() == {
+                "type": "error",
+                "code": "stale_pending_cleanup_failed",
+                "message": "could not persist stale interaction cleanup: disk full",
+            }
+
+
 def test_conflicting_message_does_not_capture_new_session_baseline(tmp_path: Path) -> None:
     project = _repo(tmp_path / "repo")
     storage = AppStorage(tmp_path / "app")

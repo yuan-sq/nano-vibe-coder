@@ -11,10 +11,16 @@ from typing import Any
 
 from nano_vibe.config import AppConfig
 from nano_vibe.gui.diff import GitDiffService
-from nano_vibe.gui.runtime import PendingInteraction
+from nano_vibe.gui.runtime import GlobalRunLock, LockAcquisitionError, PendingInteraction
 from nano_vibe.permissions import ApprovalDecision
 from nano_vibe.session import Session, session_store_for_config
 from nano_vibe.session_store import SessionStoreError
+
+
+class StalePendingCleanupError(RuntimeError):
+    """Raised when a stale interaction cannot be persisted as cleared."""
+
+    code = "stale_pending_cleanup_failed"
 
 
 class InteractionBroker:
@@ -129,9 +135,16 @@ class GuiUI:
 class GuiAgentRunner:
     handles_runtime_state = True
 
-    def __init__(self, config: AppConfig, workspace_for_session: Callable[[str], Path]) -> None:
+    def __init__(
+        self,
+        config: AppConfig,
+        workspace_for_session: Callable[[str], Path],
+        *,
+        run_lock_path: str | Path | None = None,
+    ) -> None:
         self.config = config
         self.workspace_for_session = workspace_for_session
+        self.run_lock_path = Path(run_lock_path).expanduser().resolve() if run_lock_path else None
         self.brokers: dict[str, InteractionBroker] = {}
 
     async def __call__(
@@ -209,8 +222,16 @@ class GuiAgentRunner:
     async def _clear_stale_pending(self, session_id: str, interaction_id: str) -> None:
         """Drop a persisted interaction that has no in-process broker future."""
 
+        workspace: Path | None = None
+        cleanup_lock: GlobalRunLock | None = None
         try:
             workspace = self.workspace_for_session(session_id)
+            lock_path = self.run_lock_path or workspace / ".nano-vibe" / "run.lock"
+            cleanup_lock = GlobalRunLock(lock_path)
+            try:
+                cleanup_lock.acquire()
+            except LockAcquisitionError:
+                return
             store = session_store_for_config(self.config, workspace)
             snapshot = store.load(session_id)
             pending = snapshot.pending_interaction
@@ -218,6 +239,14 @@ class GuiAgentRunner:
                 return
             snapshot.pending_interaction = None
             snapshot.runtime_state = "PAUSED"
-            store.save(snapshot)
+            try:
+                store.save(snapshot)
+            except Exception as exc:
+                raise StalePendingCleanupError(
+                    f"could not persist stale interaction cleanup: {exc}"
+                ) from exc
         except (KeyError, OSError, SessionStoreError):
             return
+        finally:
+            if cleanup_lock is not None:
+                cleanup_lock.release()

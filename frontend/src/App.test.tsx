@@ -6,8 +6,9 @@ import { useGuiStore } from "./store";
 
 const testState = vi.hoisted(() => ({
   sessionCalls: 0,
-  sockets: [] as Array<{ failInteraction: () => void }>,
-  returnCleanSnapshot: false
+  sockets: [] as Array<{ failInteraction: () => void; failCleanup: () => void }>,
+  returnCleanSnapshot: false,
+  returnMissingSnapshot: false
 }));
 
 vi.mock("./lib/api", () => ({
@@ -17,7 +18,9 @@ vi.mock("./lib/api", () => ({
       testState.sessionCalls += 1;
       return {
         metadata: {},
-        snapshot: !testState.returnCleanSnapshot
+        snapshot: testState.returnMissingSnapshot
+          ? null
+          : !testState.returnCleanSnapshot
           ? {
               runtime_state: "AWAITING_APPROVAL",
               pending_interaction: { interaction_id: "stale-1", kind: "approval", content: "确认" }
@@ -38,6 +41,13 @@ vi.mock("./lib/socket", () => ({
         failInteraction: () => {
           testState.returnCleanSnapshot = true;
           this.onCommandResult({ type: "interaction_result", ok: false });
+        },
+        failCleanup: () => {
+          this.onCommandResult({
+            type: "error",
+            code: "stale_pending_cleanup_failed",
+            message: "无法写入 Session 快照：磁盘不可写"
+          });
         }
       });
     }
@@ -55,6 +65,7 @@ describe("App shell layout", () => {
     testState.sessionCalls = 0;
     testState.sockets.length = 0;
     testState.returnCleanSnapshot = false;
+    testState.returnMissingSnapshot = false;
   });
 
   it("does not render a standalone Shell output panel", () => {
@@ -80,5 +91,39 @@ describe("App shell layout", () => {
 
     await waitFor(() => expect(screen.queryByText("需要你的确认")).not.toBeInTheDocument());
     expect(testState.sessionCalls).toBeGreaterThanOrEqual(2);
+  });
+
+  it("clears a stale approval when resync returns no snapshot", async () => {
+    useGuiStore.getState().setActiveSession("session-1");
+    useGuiStore.getState().hydrate("session-1", {
+      runtime_state: "AWAITING_APPROVAL",
+      pending_interaction: { interaction_id: "stale-1", kind: "approval", content: "确认" }
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><App /></QueryClientProvider>);
+
+    expect(await screen.findByText("需要你的确认")).toBeInTheDocument();
+    await waitFor(() => expect(testState.sockets).toHaveLength(1));
+    testState.returnMissingSnapshot = true;
+    testState.sockets[0].failInteraction();
+
+    await waitFor(() => expect(screen.queryByText("需要你的确认")).not.toBeInTheDocument());
+  });
+
+  it("shows stale cleanup persistence errors from the server", async () => {
+    useGuiStore.getState().setActiveSession("session-1");
+    useGuiStore.getState().hydrate("session-1", {
+      runtime_state: "AWAITING_APPROVAL",
+      pending_interaction: { interaction_id: "stale-1", kind: "approval", content: "确认" }
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><App /></QueryClientProvider>);
+
+    expect(await screen.findByText("需要你的确认")).toBeInTheDocument();
+    await waitFor(() => expect(testState.sockets).toHaveLength(1));
+    testState.sockets[0].failCleanup();
+
+    expect(await screen.findByText("无法写入 Session 快照：磁盘不可写")).toBeInTheDocument();
+    expect(screen.getByText("需要你的确认")).toBeInTheDocument();
   });
 });

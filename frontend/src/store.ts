@@ -34,7 +34,11 @@ export const useGuiStore = create<GuiStore>((set) => ({
     return { runtimes, unreadSessions };
   }),
   hydrate: (sessionId, snapshot, source = "initial") => set((state) => {
-    if (!snapshot) return state;
+    if (!snapshot) {
+      return source === "resync"
+        ? { runtimes: { ...state.runtimes, [sessionId]: initialRuntime(sessionId) } }
+        : state;
+    }
     const history = Array.isArray(snapshot.history) ? snapshot.history : [];
     const messages: ChatMessage[] = history.flatMap((item): ChatMessage[] => {
       if (!item || typeof item !== "object") return [];

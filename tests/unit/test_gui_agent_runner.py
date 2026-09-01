@@ -1,4 +1,5 @@
 import asyncio
+import multiprocessing
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, cast
@@ -7,7 +8,12 @@ import pytest
 
 from nano_vibe.agent.loop import LoopResult, LoopStatus
 from nano_vibe.config import AppConfig, ModelConfig, RuntimeConfig
-from nano_vibe.gui.agent_runner import GuiAgentRunner, InteractionBroker
+from nano_vibe.gui.agent_runner import (
+    GuiAgentRunner,
+    InteractionBroker,
+    StalePendingCleanupError,
+)
+from nano_vibe.gui.runtime import GlobalRunLock
 from nano_vibe.models.base import ModelResponse
 from nano_vibe.session import Session
 from nano_vibe.session_store import SessionSnapshot, SessionStore
@@ -69,6 +75,81 @@ async def test_resolve_clears_stale_pending_interaction_without_a_broker(tmp_pat
     snapshot = store.load("session-1")
     assert snapshot.pending_interaction is None
     assert snapshot.runtime_state == "PAUSED"
+
+
+def _hold_run_lock(path: str, ready: Any, release: Any) -> None:
+    lock = GlobalRunLock(path)
+    lock.acquire()
+    ready.set()
+    release.wait(5)
+    lock.release()
+
+
+@pytest.mark.asyncio
+async def test_resolve_does_not_clear_pending_owned_by_another_process(tmp_path: Path) -> None:
+    store = SessionStore(tmp_path / ".nano-vibe" / "sessions")
+    store.save(
+        SessionSnapshot(
+            session_id="session-1",
+            workspace=str(tmp_path.resolve()),
+            runtime_state="AWAITING_APPROVAL",
+            pending_interaction={
+                "interaction_id": "owned-1",
+                "kind": "approval",
+                "tool_name": "apply_patch",
+            },
+        )
+    )
+    lock_path = tmp_path / "app" / "run.lock"
+    context = multiprocessing.get_context("fork")
+    ready = context.Event()
+    release = context.Event()
+    process = context.Process(target=_hold_run_lock, args=(str(lock_path), ready, release))
+    process.start()
+    try:
+        assert ready.wait(5)
+        runner = GuiAgentRunner(
+            _runner_config(), lambda _session_id: tmp_path, run_lock_path=lock_path
+        )
+
+        assert await runner.resolve("session-1", "owned-1", "session") is False
+
+        snapshot = store.load("session-1")
+        assert snapshot.pending_interaction is not None
+        assert snapshot.pending_interaction["interaction_id"] == "owned-1"
+        assert snapshot.runtime_state == "AWAITING_APPROVAL"
+    finally:
+        release.set()
+        process.join(timeout=5)
+        assert process.exitcode == 0
+
+
+@pytest.mark.asyncio
+async def test_resolve_reports_stale_pending_persistence_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = SessionStore(tmp_path / ".nano-vibe" / "sessions")
+    store.save(
+        SessionSnapshot(
+            session_id="session-1",
+            workspace=str(tmp_path.resolve()),
+            runtime_state="AWAITING_APPROVAL",
+            pending_interaction={
+                "interaction_id": "stale-1",
+                "kind": "approval",
+                "tool_name": "apply_patch",
+            },
+        )
+    )
+
+    def fail_save(_store: SessionStore, _snapshot: SessionSnapshot) -> Path:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(SessionStore, "save", fail_save)
+    runner = GuiAgentRunner(_runner_config(), lambda _session_id: tmp_path)
+
+    with pytest.raises(StalePendingCleanupError, match="disk full"):
+        await runner.resolve("session-1", "stale-1", "session")
 
 
 @pytest.mark.asyncio

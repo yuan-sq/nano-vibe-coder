@@ -22,7 +22,7 @@ from nano_vibe.observability.trace import trace_path
 from nano_vibe.session import session_store_for_config
 from nano_vibe.session_store import SessionStore, SessionStoreError
 
-from .agent_runner import GuiAgentRunner
+from .agent_runner import GuiAgentRunner, StalePendingCleanupError
 from .diff import GitDiffService
 from .events import SessionEventBuffer
 from .runtime import GlobalRunLock, LockAcquisitionError
@@ -287,7 +287,10 @@ def create_app(
             lambda session_id: Path(
                 app_storage.get_project(app_storage.get_session(session_id).project_id).path
             ),
+            run_lock_path=app_storage.root / "run.lock",
         )
+    if isinstance(selected_runner, GuiAgentRunner) and selected_runner.run_lock_path is None:
+        selected_runner.run_lock_path = app_storage.root / "run.lock"
     selected_config = agent_config or getattr(selected_runner, "config", None)
     state = GuiState(
         storage=app_storage,
@@ -554,12 +557,18 @@ def create_app(
                         {"type": "stop_result", "ok": await state.coordinator.stop(run_id)}
                     )
                 elif command_type in {"resolve_approval", "resolve_user_request"}:
-                    ok = await state.coordinator.resolve(
-                        session_id,
-                        str(command.get("interaction_id", "")),
-                        str(command.get("decision", "")),
-                    )
-                    await websocket.send_json({"type": "interaction_result", "ok": ok})
+                    try:
+                        ok = await state.coordinator.resolve(
+                            session_id,
+                            str(command.get("interaction_id", "")),
+                            str(command.get("decision", "")),
+                        )
+                    except StalePendingCleanupError as exc:
+                        await websocket.send_json(
+                            {"type": "error", "code": exc.code, "message": str(exc)}
+                        )
+                    else:
+                        await websocket.send_json({"type": "interaction_result", "ok": ok})
                 else:
                     await websocket.send_json(
                         {"type": "error", "code": "unknown_command", "message": str(command_type)}

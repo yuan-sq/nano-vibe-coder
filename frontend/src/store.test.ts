@@ -39,6 +39,43 @@ describe("GUI store", () => {
     expect(runtime.plan).toEqual([{ id: "one", content: "检查代码", status: "pending" }]);
   });
 
+  it("resets a stale runtime when the server has no usable snapshot", () => {
+    useGuiStore.getState().reset();
+    useGuiStore.getState().hydrate("session-1", {
+      runtime_state: "AWAITING_APPROVAL",
+      pending_interaction: { interaction_id: "stale-1", kind: "approval", content: "确认" }
+    });
+
+    useGuiStore.getState().hydrate("session-1", null, "resync");
+
+    expect(useGuiStore.getState().runtimes["session-1"]).toMatchObject({
+      runtimeState: "IDLE",
+      pendingInteraction: null,
+      messages: [],
+      plan: []
+    });
+  });
+
+  it("keeps live events when the initial snapshot is missing", () => {
+    useGuiStore.getState().reset();
+    useGuiStore.getState().ingest({
+      version: 1,
+      type: "runtime_state",
+      session_id: "session-1",
+      run_id: "run-1",
+      seq: 1,
+      timestamp: "2026-09-01T00:00:00Z",
+      payload: { state: "RUNNING" }
+    });
+
+    useGuiStore.getState().hydrate("session-1", null);
+
+    expect(useGuiStore.getState().runtimes["session-1"]).toMatchObject({
+      runtimeState: "RUNNING",
+      lastSeq: 1
+    });
+  });
+
   it("omits empty assistant tool-call placeholders when hydrating history", () => {
     useGuiStore.getState().reset();
     useGuiStore.getState().hydrate("session-1", {

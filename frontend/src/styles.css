@@ -6,7 +6,8 @@ button { border: 0; cursor: pointer; }
 .app-shell { height: 100vh; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .topbar { height: 52px; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; border-bottom: 1px solid #e2e5ea; background: #fff; }
 .brand { font-weight: 700; letter-spacing: -.02em; }
-.workbench { flex: 1; display: grid; grid-template-columns: 240px minmax(480px, 1fr) 300px; min-height: 0; overflow: hidden; }
+.workbench { flex: 1; display: grid; grid-template-columns: 240px 8px minmax(480px, 1fr) 8px 300px; min-height: 0; overflow: hidden; }
+.resize-divider { position: relative; z-index: 1; min-width: 8px; cursor: col-resize; background: transparent; touch-action: none; } .resize-divider::after { position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; content: ""; background: transparent; } .resize-divider:hover::after, .resize-divider.dragging::after { background: #c8c3ff; }
 .left-panel, .right-panel { background: #fff; border-right: 1px solid #e2e5ea; padding: 14px; min-width: 0; min-height: 0; overflow-y: auto; } .right-panel { border-left: 1px solid #e2e5ea; border-right: 0; }
 .panel-heading, .conversation-heading { display: flex; align-items: center; justify-content: space-between; } .panel-heading h2 { font-size: 12px; text-transform: uppercase; color: #757c88; margin: 8px 0; } .panel-heading button { background: transparent; color: #6d5dfc; font-size: 20px; }
 .project-item, .session-item { display: flex; flex-direction: column; text-align: left; width: 100%; padding: 9px 10px; background: transparent; border-radius: 7px; gap: 3px; color: #333944; } .project-item:hover, .session-item:hover, .selected { background: #f0efff; } .project-item small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #9299a5; } .sessions-heading { margin-top: 20px; }

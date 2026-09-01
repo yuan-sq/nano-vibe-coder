@@ -4,6 +4,7 @@ import { ApiError, GuiApi, websocketUrl, type Project, type Session } from "./li
 import { GuiSocketSession, type SocketCommand } from "./lib/socket";
 import { useGuiStore } from "./store";
 import { InteractionCard, MessageList } from "./components/MessageList";
+import { ResizeDivider } from "./components/ResizeDivider";
 import { RightPanel } from "./components/RightPanel";
 import { SessionList } from "./components/SessionList";
 import "./styles.css";
@@ -33,6 +34,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"plan" | "diff" | "trace">("plan");
   const [sending, setSending] = useState(false);
+  const [leftWidth, setLeftWidth] = useState(240);
+  const [rightWidth, setRightWidth] = useState(300);
   const sendingRef = useRef(false);
   const socketRef = useRef<GuiSocketSession | null>(null);
   const { activeSessionId, setActiveSession, runtimes, unreadSessions, ingest, hydrate, setLastSeq, setConnected } = useGuiStore();
@@ -175,12 +178,23 @@ export default function App() {
       current?.map((session) => session.session_id === updated.session_id ? updated : session)
     );
   };
+  const resizeLeft = (value: number) => {
+    const max = Math.min(420, Math.max(220, window.innerWidth - rightWidth - 436));
+    setLeftWidth(Math.min(max, Math.max(220, value)));
+  };
+  const resizeRight = (value: number) => {
+    const max = Math.min(480, Math.max(240, window.innerWidth - leftWidth - 436));
+    setRightWidth(Math.min(max, Math.max(240, value)));
+  };
+  const gridTemplateColumns = `${leftWidth}px 8px minmax(420px, 1fr) 8px ${rightWidth}px`;
 
   return <main className="app-shell">
     <header className="topbar"><div className="brand">nano-vibe-coder</div></header>
-    <div className="workbench">
+    <div className="workbench" style={{ gridTemplateColumns }}>
       <aside className="left-panel"><div className="panel-heading"><h2>项目</h2><button onClick={() => void addProject()}>＋</button></div>{projects.isError && <div className="error">{(projects.error as Error).message}</div>}{projects.data?.map((project: Project) => <button className={`project-item ${project.id === projectId ? "selected" : ""}`} key={project.id} onClick={() => setProjectId(project.id)}><strong>{project.name}</strong><small>{project.path}</small></button>)}{projectId && <><div className="panel-heading sessions-heading"><h2>Sessions</h2><button onClick={() => void createSession()}>＋</button></div><SessionList sessions={sessions.data ?? []} activeSessionId={activeSessionId} onSelect={chooseSession} onRename={renameSession} onError={setError} /></>}</aside>
+      <ResizeDivider side="left" value={leftWidth} min={220} max={420} onChange={resizeLeft} />
       <section className="center-panel"><section className="conversation"><div className="conversation-heading"><div><h1>{activeSessionId ? "工作 Session" : "选择一个 Session"}</h1><small>{runtime?.runtimeState ?? "IDLE"} · Agent {runtime?.agentState ?? "REQUIREMENTS"}</small></div>{runtime?.runtimeState === "RUNNING" && runtime.runId && <button className="stop" onClick={() => void api.stopRun(runtime.runId!)}>停止</button>}</div>{error && <div className="error">{error}</div>}<MessageList messages={runtime?.messages ?? []} />{runtime?.pendingInteraction && <InteractionCard interaction={runtime.pendingInteraction} onResolve={resolveInteraction} />}</section><footer className="composer"><textarea value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} placeholder="描述你要完成的任务…" disabled={!activeSessionId} /><button onClick={() => void send()} disabled={!activeSessionId || !text.trim() || sending || runtime?.runtimeState === "RUNNING" || runtime?.runtimeState === "STOPPING"}>发送</button></footer></section>
+      <ResizeDivider side="right" value={rightWidth} min={240} max={480} onChange={resizeRight} />
       <RightPanel tab={tab} onTab={setTab} runtime={runtime} diff={diff.data} trace={trace.data} />
     </div>
   </main>;

@@ -18,6 +18,7 @@ from nano_vibe.permissions import PermissionMode, PermissionPolicy
 from nano_vibe.session_store import SessionSnapshot, SessionStore, SessionStoreError
 from nano_vibe.skills import SkillManager
 from nano_vibe.tools.apply_patch import ApplyPatchTool
+from nano_vibe.tools.filesystem import ListTool, ReadTool, WriteTool
 from nano_vibe.tools.registry import ToolRegistry
 from nano_vibe.tools.shell import ShellTool
 from nano_vibe.tools.skills import LoadSkillTool, ReadSkillTool, UnloadSkillTool
@@ -91,6 +92,9 @@ class Session:
                         timeout_seconds=shell_timeout_seconds,
                         max_output_chars=shell_max_output_chars,
                     ),
+                    ListTool(self.workspace),
+                    ReadTool(self.workspace),
+                    WriteTool(self.workspace),
                     ApplyPatchTool(self.workspace),
                     UserRequestTool(user_request_callback),
                     TransitionTool(self.machine),

@@ -31,6 +31,8 @@ _TOOLS_BY_STATE: dict[AgentState, frozenset[str]] = {
     AgentState.REQUIREMENTS: frozenset(
         {
             "shell",
+            "list",
+            "read",
             "user_request",
             "transition_state",
             "web_search",
@@ -43,6 +45,8 @@ _TOOLS_BY_STATE: dict[AgentState, frozenset[str]] = {
     AgentState.PLAN: frozenset(
         {
             "shell",
+            "list",
+            "read",
             "user_request",
             "transition_state",
             "update_plan",
@@ -56,6 +60,9 @@ _TOOLS_BY_STATE: dict[AgentState, frozenset[str]] = {
     AgentState.IMPLEMENT: frozenset(
         {
             "shell",
+            "list",
+            "read",
+            "write",
             "apply_patch",
             "user_request",
             "transition_state",
@@ -70,6 +77,8 @@ _TOOLS_BY_STATE: dict[AgentState, frozenset[str]] = {
     AgentState.VERIFY: frozenset(
         {
             "shell",
+            "list",
+            "read",
             "user_request",
             "transition_state",
             "update_agents",

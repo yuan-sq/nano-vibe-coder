@@ -9,6 +9,7 @@ from nano_vibe.agent.state import AgentState, StateMachine
 from nano_vibe.models.base import ModelResponse, ToolCall
 from nano_vibe.models.router import ModelRouter
 from nano_vibe.skills import SkillManager
+from nano_vibe.tools.filesystem import WriteTool
 from nano_vibe.tools.registry import ToolRegistry
 from nano_vibe.tools.transition import TransitionTool
 from nano_vibe.tools.update_plan import UpdatePlanTool
@@ -128,6 +129,28 @@ async def test_successful_shell_tool_emits_diff_updated(tmp_path: Path) -> None:
     await loop._execute_tool(ToolCall("shell-1", "update_plan", {"items": []}))
 
     assert ("diff_updated", {"tool": "update_plan"}) in events
+
+
+@pytest.mark.asyncio
+async def test_successful_file_write_emits_diff_updated(tmp_path: Path) -> None:
+    machine = StateMachine()
+    machine.current = AgentState.IMPLEMENT
+    events: list[tuple[str, dict[str, Any]]] = []
+    loop = AgentLoop(
+        ScriptedModel([]),
+        ToolRegistry([WriteTool(tmp_path)]),
+        machine,
+        tmp_path,
+        on_event=lambda name, payload: events.append((name, payload)),
+    )
+
+    result = await loop._execute_tool(
+        ToolCall("write-1", "write", {"path": "hello.txt", "content": "hello"})
+    )
+
+    assert result.ok is True
+    assert (tmp_path / "hello.txt").read_text(encoding="utf-8") == "hello"
+    assert ("diff_updated", {"tool": "write"}) in events
 
 
 @pytest.mark.asyncio

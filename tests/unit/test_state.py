@@ -42,9 +42,10 @@ def test_done_requires_agents_review() -> None:
 
 def test_tool_permissions_depend_on_current_state() -> None:
     machine = StateMachine()
-
-    assert machine.allowed_tools() == {
+    base_tools = {
         "shell",
+        "list",
+        "read",
         "user_request",
         "transition_state",
         "web_search",
@@ -53,10 +54,11 @@ def test_tool_permissions_depend_on_current_state() -> None:
         "read_skill",
         "unload_skill",
     }
+
+    assert machine.allowed_tools() == base_tools
     machine.transition(AgentState.PLAN)
-    assert "apply_patch" not in machine.allowed_tools()
+    assert machine.allowed_tools() == base_tools | {"update_plan"}
     machine.transition(AgentState.IMPLEMENT)
-    assert "apply_patch" in machine.allowed_tools()
+    assert machine.allowed_tools() == base_tools | {"apply_patch", "update_plan", "write"}
     machine.transition(AgentState.VERIFY)
-    assert "apply_patch" not in machine.allowed_tools()
-    assert "update_agents" in machine.allowed_tools()
+    assert machine.allowed_tools() == base_tools | {"update_agents", "update_plan"}

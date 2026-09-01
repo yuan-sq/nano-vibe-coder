@@ -10,6 +10,7 @@ from nano_vibe.models.base import ModelResponse
 from nano_vibe.permissions import ApprovalDecision, PermissionMode, PermissionPolicy
 from nano_vibe.session import Session
 from nano_vibe.session_store import SessionSnapshot, SessionStore
+from nano_vibe.tools.filesystem import ListTool, ReadTool, WriteTool
 from nano_vibe.tools.shell import ShellTool
 from nano_vibe.tools.web_search import WebSearchTool
 
@@ -43,6 +44,17 @@ def test_session_applies_shell_runtime_limits(tmp_path: Path) -> None:
     shell = cast(ShellTool, session.registry._tools["shell"])
     assert shell.timeout_seconds == 7
     assert shell.max_output_chars == 123
+
+
+def test_session_registers_workspace_file_tools(tmp_path: Path) -> None:
+    session = Session(PlainModel(), tmp_path)
+
+    assert isinstance(session.registry._tools["list"], ListTool)
+    assert isinstance(session.registry._tools["read"], ReadTool)
+    assert isinstance(session.registry._tools["write"], WriteTool)
+    assert session.registry._tools["list"].permission_scope == "read"
+    assert session.registry._tools["read"].permission_scope == "read"
+    assert session.registry._tools["write"].permission_scope == "write"
 
 
 def test_session_propagates_tavily_api_key_from_config(

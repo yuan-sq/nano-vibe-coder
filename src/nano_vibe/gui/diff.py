@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from difflib import unified_diff
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 _INTERNAL_DIRS = {".git", ".nano-vibe"}
 _GIT_TIMEOUT_SECONDS = 10.0
@@ -64,6 +64,14 @@ class DiffBaseline:
     files: dict[str, dict[str, Any]] = field(default_factory=dict)
     truncated: bool = False
     contents_truncated: bool = False
+
+
+@dataclass(frozen=True)
+class _GitBlobResult:
+    state: Literal["ok", "missing", "failed", "too_large"]
+    data: bytes | None = None
+    size: int | None = None
+    mode: int | None = None
 
 
 @dataclass(frozen=True)
@@ -148,6 +156,10 @@ class GitDiffService:
         self._baseline_contents_truncated = False
         self._last_git_output_truncated = False
         self._patch_output_limit: int | None = None
+        self._blob_read_failed = False
+        self._file_summaries_truncated = False
+        self._git_status_truncated = False
+        self._patch_truncated = False
 
     @property
     def baseline_path(self) -> Path | None:
@@ -174,7 +186,9 @@ class GitDiffService:
         self._baseline = self._capture_baseline()
         if path is not None:
             try:
-                self._write_baseline(path, self._baseline, self._baseline_contents)
+                self._baseline, self._baseline_contents = self._write_baseline(
+                    path, self._baseline, self._baseline_contents
+                )
             except OSError:
                 # Diff remains available even when its optional persistence location is
                 # not writable (for example, a read-only checkout).
@@ -187,7 +201,9 @@ class GitDiffService:
         path = self.baseline_path
         if path is not None:
             try:
-                self._write_baseline(path, self._baseline, self._baseline_contents)
+                self._baseline, self._baseline_contents = self._write_baseline(
+                    path, self._baseline, self._baseline_contents
+                )
             except OSError:
                 pass
 
@@ -198,10 +214,33 @@ class GitDiffService:
         if not self._is_git():
             return DiffSnapshot(False, None, baseline.captured_at)
 
+        self._git_capture_failed = False
+        self._metadata_truncated = False
+        self._file_summaries_truncated = False
+        self._git_status_truncated = False
+        self._patch_truncated = False
+        self._blob_read_failed = False
         current = self._file_summaries()
         statuses = self._git_status()
+        if self._git_capture_failed:
+            return DiffSnapshot(True, baseline.head, baseline.captured_at, [], True)
+        observed_paths = set(current) | set(statuses)
+        if not (self._file_summaries_truncated or self._git_status_truncated):
+            observed_paths.update(baseline.files)
+        if self._file_summaries_truncated:
+            observed_paths = {
+                path
+                for path in observed_paths
+                if path in current or "D" in statuses.get(path, "")
+            }
+        if self._git_status_truncated:
+            observed_paths = {
+                path
+                for path in observed_paths
+                if path in statuses or path in baseline.files
+            }
         paths, paths_truncated = self._bounded_paths(
-            set(baseline.files) | set(current) | set(statuses),
+            observed_paths,
             max_items=_MAX_DIFF_ENTRIES,
             max_path_bytes=_MAX_DIFF_PATH_BYTES,
         )
@@ -267,6 +306,8 @@ class GitDiffService:
                     staged_patch, consumed = self._bounded_patch(
                         candidate, max_total_patch_bytes - patch_bytes
                     )
+                    if candidate and staged_patch is None:
+                        self._patch_truncated = True
                     patch_bytes += consumed
                 if unstaged and patch_bytes < max_total_patch_bytes:
                     self._patch_output_limit = max_total_patch_bytes - patch_bytes
@@ -281,6 +322,8 @@ class GitDiffService:
                     unstaged_patch, consumed = self._bounded_patch(
                         candidate, max_total_patch_bytes - patch_bytes
                     )
+                    if candidate and unstaged_patch is None:
+                        self._patch_truncated = True
                     patch_bytes += consumed
             task_patch = (
                 None
@@ -334,13 +377,19 @@ class GitDiffService:
             baseline.truncated
             or self._metadata_truncated
             or paths_truncated
-            or content_truncated,
+            or content_truncated
+            or self._patch_truncated
+            or self._blob_read_failed
+            or patch_bytes >= max_total_patch_bytes,
         )
 
     def _capture_baseline(self) -> DiffBaseline:
         self._git_capture_failed = False
         self._metadata_truncated = False
         self._baseline_contents_truncated = False
+        self._blob_read_failed = False
+        self._file_summaries_truncated = False
+        self._git_status_truncated = False
         is_git = self._is_git()
         if not is_git:
             self._baseline_contents = {}
@@ -506,33 +555,105 @@ class GitDiffService:
         return True
 
     @staticmethod
-    def _write_baseline(
-        path: Path, baseline: DiffBaseline, contents: dict[str, str] | None = None
-    ) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
+    def _baseline_payload(
+        baseline: DiffBaseline, contents: dict[str, str]
+    ) -> dict[str, object]:
+        return {
             "version": _BASELINE_VERSION,
             "captured_at": baseline.captured_at,
             "is_git": baseline.is_git,
             "head": baseline.head,
             "initial_status": baseline.statuses,
             "files": baseline.files,
-            "contents": contents or {},
+            "contents": contents,
             "truncated": baseline.truncated,
             "contents_truncated": baseline.contents_truncated,
         }
+
+    @staticmethod
+    def _serialize_baseline_payload(payload: dict[str, object]) -> bytes:
+        return (
+            json.dumps(payload, ensure_ascii=True, sort_keys=True).encode("utf-8")
+            + b"\n"
+        )
+
+    def _fit_baseline_payload(
+        self, baseline: DiffBaseline, contents: dict[str, str]
+    ) -> tuple[DiffBaseline, dict[str, str], bytes]:
+        """Fit the final ensure_ascii JSON, retaining a deterministic prefix."""
+
+        keys = sorted(contents)
+
+        def candidate(
+            count: int, force_truncated: bool
+        ) -> tuple[DiffBaseline, dict[str, str], bytes]:
+            bounded_contents = {key: contents[key] for key in keys[:count]}
+            bounded_baseline = DiffBaseline(
+                baseline.captured_at,
+                baseline.is_git,
+                baseline.head,
+                baseline.statuses,
+                baseline.files,
+                baseline.truncated or force_truncated,
+                baseline.contents_truncated or force_truncated,
+            )
+            payload = self._baseline_payload(bounded_baseline, bounded_contents)
+            return (
+                bounded_baseline,
+                bounded_contents,
+                self._serialize_baseline_payload(payload),
+            )
+
+        full = candidate(len(keys), False)
+        if len(full[2]) <= _MAX_BASELINE_PAYLOAD_BYTES:
+            return full
+
+        low = 0
+        high = len(keys)
+        while low < high:
+            middle = (low + high + 1) // 2
+            if len(candidate(middle, True)[2]) <= _MAX_BASELINE_PAYLOAD_BYTES:
+                low = middle
+            else:
+                high = middle - 1
+        fitted = candidate(low, True)
+        if len(fitted[2]) <= _MAX_BASELINE_PAYLOAD_BYTES:
+            return fitted
+
+        minimal = DiffBaseline(
+            baseline.captured_at,
+            baseline.is_git,
+            baseline.head,
+            {},
+            {},
+            True,
+            True,
+        )
+        minimal_contents: dict[str, str] = {}
+        minimal_payload = self._serialize_baseline_payload(
+            self._baseline_payload(minimal, minimal_contents)
+        )
+        return minimal, minimal_contents, minimal_payload
+
+    def _write_baseline(
+        self, path: Path, baseline: DiffBaseline, contents: dict[str, str] | None = None
+    ) -> tuple[DiffBaseline, dict[str, str]]:
+        bounded_baseline, bounded_contents, serialized = self._fit_baseline_payload(
+            baseline, contents or {}
+        )
+        path.parent.mkdir(parents=True, exist_ok=True)
         fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
         temporary_path = Path(temporary)
         try:
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                json.dump(payload, handle, ensure_ascii=True, sort_keys=True)
-                handle.write("\n")
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(serialized)
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temporary_path, path)
         finally:
             if temporary_path.exists():
                 temporary_path.unlink()
+        return bounded_baseline, bounded_contents
 
     def _read_baseline_contents(self, path: Path) -> tuple[dict[str, str], bool]:
         content_path = path.with_name("diff-baseline-content.json")
@@ -659,6 +780,8 @@ class GitDiffService:
         finally:
             self._patch_output_limit = None
         patch, _ = self._bounded_patch(candidate, max_output_bytes)
+        if candidate and patch is None:
+            self._patch_truncated = True
         return patch
 
     def _is_git(self) -> bool:
@@ -690,6 +813,7 @@ class GitDiffService:
             return summaries
         raw_output = result.stdout
         if self._last_git_output_truncated:
+            self._file_summaries_truncated = True
             self._metadata_truncated = True
             raw_output = raw_output[: raw_output.rfind(b"\0") + 1]
         relative_paths = raw_output.split(b"\0")
@@ -708,6 +832,7 @@ class GitDiffService:
             max_path_bytes=_MAX_BASELINE_PATH_BYTES,
         )
         self._metadata_truncated = self._metadata_truncated or truncated
+        self._file_summaries_truncated = self._file_summaries_truncated or truncated
         return bounded
 
     def _workspace_parent(self, relative: str) -> tuple[int, str] | None:
@@ -904,6 +1029,7 @@ class GitDiffService:
         statuses: dict[str, str] = {}
         raw_output = result.stdout
         if self._last_git_output_truncated:
+            self._git_status_truncated = True
             self._metadata_truncated = True
             raw_output = raw_output[: raw_output.rfind(b"\0") + 1]
         fields = raw_output.split(b"\0")
@@ -930,46 +1056,97 @@ class GitDiffService:
             max_path_bytes=_MAX_BASELINE_PATH_BYTES,
         )
         self._metadata_truncated = self._metadata_truncated or truncated
+        self._git_status_truncated = self._git_status_truncated or truncated
         return bounded
 
-    def _git_blob(self, path: str, ref: str) -> bytes | None:
-        size = self._git_blob_size(path, ref)
-        if size is None or size > self.max_file_bytes:
-            return None
-        result = self._run_git("show", self._git_object_name(path, ref))
-        if result.returncode != 0 or len(result.stdout) > self.max_file_bytes:
-            return None
-        return result.stdout
+    def _git_blob_presence(self, path: str, ref: str) -> _GitBlobResult:
+        if ref == ":":
+            result = self._run_git("ls-files", "--stage", "-z", "--", path)
+        else:
+            result = self._run_git("ls-tree", "-z", ref, "--", path)
+        if result.returncode != 0:
+            self._blob_read_failed = True
+            return _GitBlobResult("failed")
+        record = result.stdout.split(b"\0", 1)[0]
+        if not record:
+            return _GitBlobResult("missing")
+        if len(record) < 6:
+            self._blob_read_failed = True
+            return _GitBlobResult("failed")
+        try:
+            mode = int(record[:6], 8)
+        except ValueError:
+            self._blob_read_failed = True
+            return _GitBlobResult("failed")
+        return _GitBlobResult("ok", mode=mode)
 
-    def _git_blob_size(self, path: str, ref: str) -> int | None:
+    def _git_blob_size_result(self, path: str, ref: str) -> _GitBlobResult:
+        presence = self._git_blob_presence(path, ref)
+        if presence.state != "ok":
+            return presence
         result = self._run_git("cat-file", "-s", self._git_object_name(path, ref))
         if result.returncode != 0:
-            return None
+            self._blob_read_failed = True
+            return _GitBlobResult("failed")
         try:
             size = int(result.stdout.decode("ascii", errors="strict").strip())
         except (UnicodeDecodeError, ValueError):
-            return None
-        return size if size >= 0 else None
+            self._blob_read_failed = True
+            return _GitBlobResult("failed")
+        if size < 0:
+            self._blob_read_failed = True
+            return _GitBlobResult("failed")
+        return _GitBlobResult("ok", size=size, mode=presence.mode)
+
+    def _git_blob_result(self, path: str, ref: str) -> _GitBlobResult:
+        sized = self._git_blob_size_result(path, ref)
+        if sized.state != "ok":
+            return sized
+        if sized.size is None:
+            self._blob_read_failed = True
+            return _GitBlobResult("failed")
+        if sized.size > self.max_file_bytes:
+            return _GitBlobResult("too_large", size=sized.size, mode=sized.mode)
+        result = self._run_git("show", self._git_object_name(path, ref))
+        if result.returncode != 0:
+            self._blob_read_failed = True
+            return _GitBlobResult("failed")
+        if len(result.stdout) != sized.size:
+            self._blob_read_failed = True
+            return _GitBlobResult("failed")
+        return _GitBlobResult("ok", result.stdout, sized.size, sized.mode)
+
+    def _git_blob(self, path: str, ref: str) -> bytes | None:
+        """Compatibility wrapper returning data only for a confirmed blob."""
+
+        result = self._git_blob_result(path, ref)
+        return result.data if result.state == "ok" else None
+
+    def _git_blob_size(self, path: str, ref: str) -> int | None:
+        result = self._git_blob_size_result(path, ref)
+        return result.size if result.state == "ok" else None
 
     @staticmethod
     def _git_object_name(path: str, ref: str) -> str:
         return f":{path}" if ref == ":" else f"{ref}:{path}"
 
     def _git_blob_summary(self, path: str, ref: str) -> dict[str, Any] | None:
-        size = self._git_blob_size(path, ref)
-        if size is None:
+        blob_result = self._git_blob_result(path, ref)
+        if blob_result.state == "missing" or blob_result.state == "failed":
             return None
-        mode = self._git_blob_mode(path, ref)
-        if size > self.max_file_bytes:
+        mode = blob_result.mode
+        if blob_result.state == "too_large":
+            if blob_result.size is None:
+                return None
             return {
                 "sha256": "",
-                "size": size,
+                "size": blob_result.size,
                 "binary": False,
                 "symlink": mode == 0o120000,
                 "mode": mode,
             }
-        blob = self._git_blob(path, ref)
-        if blob is None:
+        blob = blob_result.data
+        if blob is None or blob_result.size is None:
             return None
         if mode == 0o120000:
             return {
@@ -979,24 +1156,13 @@ class GitDiffService:
                 "symlink": True,
                 "mode": mode,
             }
-        summary = self._inspect_bytes(blob, size=size)
+        summary = self._inspect_bytes(blob, size=blob_result.size)
         summary["mode"] = mode
         return summary
 
     def _git_blob_mode(self, path: str, ref: str) -> int | None:
-        if ref == ":":
-            result = self._run_git("ls-files", "--stage", "-z", "--", path)
-        else:
-            result = self._run_git("ls-tree", "-z", ref, "--", path)
-        if result.returncode != 0:
-            return None
-        record = result.stdout.split(b"\0", 1)[0]
-        if len(record) < 6:
-            return None
-        try:
-            return int(record[:6], 8)
-        except ValueError:
-            return None
+        result = self._git_blob_presence(path, ref)
+        return result.mode if result.state == "ok" else None
 
     @staticmethod
     def _inspect_bytes(raw: bytes, *, size: int | None = None) -> dict[str, Any]:
@@ -1058,7 +1224,12 @@ class GitDiffService:
         elif self._baseline and self._baseline.truncated and path not in self._baseline.files:
             return None
         elif self._baseline and self._baseline.head:
-            baseline = self._git_blob(path, self._baseline.head) or b""
+            blob = self._git_blob_result(path, self._baseline.head)
+            if blob.state in {"failed", "too_large"}:
+                return None
+            baseline = b"" if blob.state == "missing" else blob.data
+            if baseline is None:
+                return None
         else:
             baseline = b""
         if len(baseline) > self.max_file_bytes:
@@ -1095,6 +1266,7 @@ class GitDiffService:
                 self._patch_output_limit is not None
                 and output_bytes + piece_bytes > self._patch_output_limit
             ):
+                self._patch_truncated = True
                 return None
             pieces.append(piece)
             output_bytes += piece_bytes
@@ -1121,10 +1293,30 @@ class GitDiffService:
 
     def _patch(self, path: str, *, staged: bool, untracked: bool) -> str | None:
         if staged:
-            before = self._git_blob(path, "HEAD") or b""
-            after = self._git_blob(path, ":") or b""
+            before_blob = (
+                _GitBlobResult("missing")
+                if self._baseline is not None and self._baseline.head is None
+                else self._git_blob_result(path, "HEAD")
+            )
+            after_blob = self._git_blob_result(path, ":")
+            if before_blob.state in {"failed", "too_large"}:
+                return None
+            if after_blob.state in {"failed", "too_large"}:
+                return None
+            before = b"" if before_blob.state == "missing" else before_blob.data
+            after = b"" if after_blob.state == "missing" else after_blob.data
+            if before is None or after is None:
+                return None
         else:
-            before = b"" if untracked else (self._git_blob(path, ":") or b"")
+            if untracked:
+                before = b""
+            else:
+                before_blob = self._git_blob_result(path, ":")
+                if before_blob.state in {"failed", "too_large"}:
+                    return None
+                before = b"" if before_blob.state == "missing" else before_blob.data
+                if before is None:
+                    return None
             current = self._read_current_bytes(path)
             if current is None:
                 if not self._workspace_leaf_is_missing(path):

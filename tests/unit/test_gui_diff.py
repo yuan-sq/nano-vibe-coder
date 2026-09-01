@@ -284,6 +284,7 @@ def test_patch_outputs_share_a_hard_total_limit(tmp_path: Path, monkeypatch) -> 
         entry["task_patch"],
     ]
     assert sum(len(value.encode("utf-8")) for value in patch_values if value) <= diff_module._MAX_TOTAL_PATCH_BYTES
+    assert body["truncated"] is True
 
 
 def test_snapshot_file_contents_share_a_hard_total_limit(tmp_path: Path, monkeypatch) -> None:
@@ -349,6 +350,93 @@ def test_staged_deletion_keeps_a_patch_without_reading_the_worktree(tmp_path: Pa
 
     assert entry["staged_patch"] is not None
     assert "-old" in entry["staged_patch"]
+
+
+def test_staged_addition_distinguishes_a_missing_head_blob_from_git_failure(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path / "repo")
+    service = GitDiffService(repo, "session-1")
+    service.ensure_baseline()
+    added = repo / "added.txt"
+    added.write_text("new\n", encoding="utf-8")
+    _git(repo, "add", "added.txt")
+
+    entry = service.snapshot().to_dict()["entries"][0]  # type: ignore[index]
+
+    assert entry["staged_patch"] is not None
+    assert "+new" in entry["staged_patch"]
+
+
+@pytest.mark.parametrize("failure_command", ["cat-file", "show"])
+def test_failed_git_blob_read_never_becomes_an_empty_patch(
+    tmp_path: Path, monkeypatch, failure_command: str
+) -> None:
+    repo = _repo(tmp_path / "repo")
+    tracked = repo / "tracked.txt"
+    tracked.write_text("old\n", encoding="utf-8")
+    _commit_all(repo)
+    service = GitDiffService(repo, "session-1")
+    service.ensure_baseline()
+    tracked.write_text("new\n", encoding="utf-8")
+    _git(repo, "add", "tracked.txt")
+    original = service._run_git
+
+    def fail_head_blob(*arguments: str, **kwargs):
+        if arguments and arguments[0] == failure_command:
+            object_name = arguments[-1]
+            if "HEAD:tracked.txt" in object_name:
+                return subprocess.CompletedProcess(
+                    [], 128, b"", b"blob read failed"
+                )
+        return original(*arguments, **kwargs)
+
+    monkeypatch.setattr(service, "_run_git", fail_head_blob)
+    entry = service.snapshot().to_dict()["entries"][0]  # type: ignore[index]
+
+    assert entry["staged_patch"] is None
+
+
+def test_ascii_baseline_payload_limit_is_hard_and_reloads_without_recapture(
+    tmp_path: Path, monkeypatch
+) -> None:
+    repo = _repo(tmp_path / "repo")
+    tracked = repo / "tracked.txt"
+    tracked.write_text("base\n", encoding="utf-8")
+    _commit_all(repo)
+    tracked.write_text("😀" * 500, encoding="utf-8")
+    monkeypatch.setattr(diff_module, "_MAX_BASELINE_CONTENT_BYTES", 2_000)
+    monkeypatch.setattr(diff_module, "_MAX_BASELINE_PAYLOAD_BYTES", 4_096)
+
+    first = GitDiffService(repo, "session-1")
+    baseline = first.ensure_baseline()
+    baseline_path = repo / ".nano-vibe" / "gui" / "session-1" / "diff-baseline.json"
+    raw = baseline_path.read_bytes()
+    payload = json.loads(raw)
+    assert len(raw) <= 4_096
+    assert payload["contents"] == {}
+    assert payload["contents_truncated"] is True
+
+    second = GitDiffService(repo, "session-1")
+    assert second.ensure_baseline().captured_at == baseline.captured_at
+
+
+def test_truncated_git_metadata_does_not_report_baseline_files_as_deleted(
+    tmp_path: Path, monkeypatch
+) -> None:
+    repo = _repo(tmp_path / "repo")
+    tracked = repo / "tracked.txt"
+    tracked.write_text("base\n", encoding="utf-8")
+    _commit_all(repo)
+    service = GitDiffService(repo, "session-1")
+    service.ensure_baseline()
+    tracked.write_text("changed\n", encoding="utf-8")
+    monkeypatch.setattr(diff_module, "_MAX_BASELINE_PATH_BYTES", 1)
+
+    body = service.snapshot().to_dict()
+
+    assert body["entries"] == []
+    assert body["truncated"] is True
 
 
 def test_baseline_metadata_and_contents_are_bounded_and_marked(tmp_path: Path, monkeypatch) -> None:

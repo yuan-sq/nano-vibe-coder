@@ -29,6 +29,13 @@ from nano_vibe.tools.web_extract import WebExtractTool
 from nano_vibe.tools.web_search import WebSearchTool
 
 
+def session_store_for_config(config: AppConfig, workspace: str | Path) -> SessionStore:
+    workspace_path = Path(workspace).resolve()
+    configured = Path(config.runtime.session_dir)
+    directory = configured if configured.is_absolute() else workspace_path / configured
+    return SessionStore(directory)
+
+
 class Session:
     def __init__(
         self,
@@ -172,8 +179,15 @@ class Session:
         policy = self.registry.permission_policy
         if policy is None:
             return
-        policy.grant_session(str(interaction.tool_name))
-        self.save_snapshot()
+        tool_name = str(interaction.tool_name)
+        already_granted = tool_name in policy.session_grants
+        policy.grant_session(tool_name)
+        try:
+            self.save_snapshot()
+        except BaseException:
+            if not already_granted:
+                policy.revoke_session(tool_name)
+            raise
 
     def restore_snapshot(self, snapshot: SessionSnapshot) -> None:
         if snapshot.workspace and Path(snapshot.workspace).resolve() != self.workspace:
@@ -278,11 +292,7 @@ class Session:
             workspace_path,
             trace=trace,
             session_id=session_id,
-            session_store=SessionStore(
-                Path(config.runtime.session_dir)
-                if Path(config.runtime.session_dir).is_absolute()
-                else workspace_path / config.runtime.session_dir
-            ),
+            session_store=session_store_for_config(config, workspace_path),
             permission_mode=permission_mode or config.runtime.permission_mode,
             permission_approve=getattr(ui, "approve", None),
             skill_roots=config.skill_roots or None,

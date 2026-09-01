@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from nano_vibe.config import AppConfig
+from nano_vibe.gui.diff import GitDiffService
 from nano_vibe.gui.runtime import PendingInteraction
 from nano_vibe.permissions import ApprovalDecision
 from nano_vibe.session import Session
@@ -125,6 +126,8 @@ class GuiUI:
 
 
 class GuiAgentRunner:
+    handles_runtime_state = True
+
     def __init__(self, config: AppConfig, workspace_for_session: Callable[[str], Path]) -> None:
         self.config = config
         self.workspace_for_session = workspace_for_session
@@ -138,6 +141,7 @@ class GuiAgentRunner:
         stop_event: asyncio.Event,
     ) -> None:
         workspace = self.workspace_for_session(session_id)
+        GitDiffService(workspace, session_id).ensure_baseline()
         holder: dict[str, Session] = {}
 
         async def on_pending(interaction: PendingInteraction) -> None:
@@ -170,6 +174,7 @@ class GuiAgentRunner:
             session.restore_snapshot(session.session_store.load(session_id))
         session.runtime_state = "RUNNING"
         session.save_snapshot()
+        await emit("runtime_state", {"state": "RUNNING"})
         agent_task = asyncio.create_task(session.handle_input(text))
         stop_task = asyncio.create_task(stop_event.wait())
         try:

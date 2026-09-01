@@ -67,6 +67,33 @@ async def test_session_grant_is_persisted_before_authorize_returns(tmp_path: Pat
 
 
 @pytest.mark.asyncio
+async def test_failed_session_grant_persistence_rolls_back_before_resolve_returns(tmp_path: Path) -> None:
+    async def emit(_name: str, _payload: dict[str, Any]) -> None:
+        return
+
+    store = SessionStore(tmp_path / "sessions")
+    broker = InteractionBroker(emit)
+    session = Session(
+        PlainModel(),
+        tmp_path,
+        session_id="session-1",
+        session_store=store,
+        permission_approve=broker.approve,
+    )
+    policy = session.registry.permission_policy
+    assert policy is not None
+    authorize = asyncio.create_task(policy.authorize("apply_patch", "write", {}))
+    await asyncio.sleep(0)
+    session.save_snapshot = lambda: (_ for _ in ()).throw(RuntimeError("disk full"))  # type: ignore[method-assign]
+
+    interaction_id = next(iter(broker.pending))
+    assert await broker.resolve(interaction_id, "session") is False
+    assert policy.session_grants == set()
+    authorize.cancel()
+    await asyncio.gather(authorize, return_exceptions=True)
+
+
+@pytest.mark.asyncio
 async def test_gui_runner_restores_real_session_state_and_policy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     config = AppConfig(
         active_model=ModelConfig("test", "http://example.test", "test"),
@@ -105,6 +132,47 @@ async def test_gui_runner_restores_real_session_state_and_policy(tmp_path: Path,
     assert restored.plan == [{"id": "inspect", "content": "Inspect", "status": "in_progress"}]
     assert restored.session_grants == ["apply_patch"]
     assert [item["content"] for item in restored.history if item.get("role") == "user"] == ["first", "second"]
+
+
+@pytest.mark.asyncio
+async def test_gui_runner_emits_running_only_after_restore(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+    snapshot = SessionSnapshot(session_id="session-1", workspace=str(tmp_path.resolve()))
+
+    class FakeStore:
+        def path_for(self, _session_id: str) -> Path:
+            return tmp_path / "session.json"
+
+        def load(self, _session_id: str) -> SessionSnapshot:
+            return snapshot
+
+    class FakeSession:
+        runtime_state = "IDLE"
+        pending_interaction = None
+        session_store = FakeStore()
+
+        def restore_snapshot(self, _snapshot: SessionSnapshot) -> None:
+            calls.append("restore")
+
+        def save_snapshot(self) -> Path:
+            calls.append(f"save:{self.runtime_state}")
+            return tmp_path / "session.json"
+
+        async def handle_input(self, _text: str) -> LoopResult:
+            return LoopResult(LoopStatus.WAITING, "done", 1)
+
+    monkeypatch.setattr("nano_vibe.gui.agent_runner.Session.from_config", lambda *_args, **_kwargs: FakeSession())
+    (tmp_path / "session.json").write_text("{}", encoding="utf-8")
+    runner = GuiAgentRunner(cast(AppConfig, object()), lambda _session_id: tmp_path)
+    events: list[str] = []
+
+    async def emit(name: str, _payload: dict[str, Any]) -> None:
+        events.append(name)
+        if name == "runtime_state":
+            assert "restore" in calls
+
+    await runner("session-1", "second", emit, asyncio.Event())
+    assert events[0] == "runtime_state"
 
 
 @pytest.mark.asyncio

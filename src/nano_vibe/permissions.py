@@ -98,6 +98,10 @@ class PermissionPolicy:
             raise ValueError("tool_name must not be empty")
         self._session_grants.add(tool_name)
 
+    def revoke_session(self, tool_name: str) -> None:
+        """Remove a grant when persisting an approval transaction fails."""
+        self._session_grants.discard(tool_name)
+
     def requires_approval(self, scope: str) -> bool:
         return self.mode is PermissionMode.NORMAL and scope in self.restricted_scopes
 

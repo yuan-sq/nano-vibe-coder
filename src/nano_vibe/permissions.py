@@ -139,6 +139,8 @@ class PermissionPolicy:
                 retryable=False,
             )
         if decision is ApprovalDecision.SESSION:
+            if tool_name in self._session_grants:
+                return None
             self._session_grants.add(tool_name)
             try:
                 if self._on_session_grant is not None:

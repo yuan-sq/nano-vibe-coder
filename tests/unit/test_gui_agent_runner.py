@@ -67,6 +67,45 @@ async def test_session_grant_is_persisted_before_authorize_returns(tmp_path: Pat
 
 
 @pytest.mark.asyncio
+async def test_gui_session_grant_resolve_and_authorize_persist_once(tmp_path: Path) -> None:
+    async def emit(_name: str, _payload: dict[str, Any]) -> None:
+        return
+
+    store = SessionStore(tmp_path / "sessions")
+    broker = InteractionBroker(emit)
+    session = Session(
+        PlainModel(),
+        tmp_path,
+        session_id="session-1",
+        session_store=store,
+        permission_approve=broker.approve,
+    )
+    policy = session.registry.permission_policy
+    assert policy is not None
+    authorize = asyncio.create_task(policy.authorize("apply_patch", "write", {}))
+    await asyncio.sleep(0)
+
+    original_save = store.save
+    save_calls = 0
+
+    def fail_on_second_save(snapshot: SessionSnapshot) -> Path:
+        nonlocal save_calls
+        save_calls += 1
+        if save_calls > 1:
+            raise RuntimeError("unexpected second save")
+        return original_save(snapshot)
+
+    store.save = fail_on_second_save  # type: ignore[method-assign]
+    interaction_id = next(iter(broker.pending))
+
+    assert await broker.resolve(interaction_id, "session") is True
+    assert await authorize is True
+    assert save_calls == 1
+    assert policy.session_grants == {"apply_patch"}
+    assert store.load("session-1").session_grants == ["apply_patch"]
+
+
+@pytest.mark.asyncio
 async def test_failed_session_grant_persistence_rolls_back_before_resolve_returns(tmp_path: Path) -> None:
     async def emit(_name: str, _payload: dict[str, Any]) -> None:
         return

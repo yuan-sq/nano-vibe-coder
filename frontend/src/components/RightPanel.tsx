@@ -36,7 +36,7 @@ function DiffFile({ entry }: { entry: RecordValue }) {
       </div>
       {entry.binary || entry.too_large
         ? <div className="muted">正文已隐藏，仅显示元数据</div>
-        : <><Patch value={stagedPatch} /><Patch value={unstagedPatch} /></>}
+        : <><Patch value={stagedPatch} /><Patch value={unstagedPatch} />{entry.task_patch && <><div className="patch-label">任务相对变化</div><Patch value={entry.task_patch} /></>}</>}
     </div>
   </details>;
 }

@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from nano_vibe.config import AppConfig
 from nano_vibe.observability.trace import trace_path
+from nano_vibe.session import session_store_for_config
 from nano_vibe.session_store import SessionStore, SessionStoreError
 
 from .agent_runner import GuiAgentRunner
@@ -140,7 +141,13 @@ class TaskCoordinator:
     def active(self) -> ActiveRun | None:
         return self._active
 
-    async def start(self, session_id: str, text: str) -> str:
+    async def start(
+        self,
+        session_id: str,
+        text: str,
+        *,
+        before_run: Callable[[], Any] | None = None,
+    ) -> str:
         async with self._guard:
             if self._active is not None and not self._active.task.done():
                 raise RunConflict(self._active.run_id)
@@ -148,6 +155,14 @@ class TaskCoordinator:
                 self._run_lock.acquire()
             except LockAcquisitionError as exc:
                 raise RunConflict(None) from exc
+            try:
+                if before_run is not None:
+                    result = before_run()
+                    if inspect.isawaitable(result):
+                        await result
+            except BaseException:
+                self._run_lock.release()
+                raise
             run_id = uuid.uuid4().hex[:12]
             stop_event = asyncio.Event()
             task = asyncio.create_task(self._run(run_id, session_id, text, stop_event))
@@ -161,7 +176,8 @@ class TaskCoordinator:
             await self.hub.publish(session_id, run_id, event_type, payload)
 
         try:
-            await emit("runtime_state", {"state": "RUNNING"})
+            if not getattr(self.runner, "handles_runtime_state", False):
+                await emit("runtime_state", {"state": "RUNNING"})
             result = self.runner(session_id, text, emit, stop_event)
             if inspect.isawaitable(result):
                 await result
@@ -218,6 +234,7 @@ class GuiState:
     frontend_origin: str
     home: Path
     secret_store: SecretStore
+    agent_config: AppConfig | None
 
 
 def _project_dict(project: ProjectRecord) -> dict[str, Any]:
@@ -263,6 +280,7 @@ def create_app(
                 app_storage.get_project(app_storage.get_session(session_id).project_id).path
             ),
         )
+    selected_config = agent_config or getattr(selected_runner, "config", None)
     state = GuiState(
         storage=app_storage,
         event_buffer=buffer,
@@ -274,6 +292,7 @@ def create_app(
         frontend_origin=frontend_origin,
         home=Path(home).expanduser().resolve() if home is not None else Path.home().resolve(),
         secret_store=SecretStore(app_storage.root / ".env"),
+        agent_config=selected_config,
     )
     app = FastAPI(title="nano-vibe GUI", version="3")
     app.state.gui = state
@@ -404,7 +423,12 @@ def create_app(
             raise HTTPException(status_code=404, detail={"code": "session_not_found"}) from exc
         snapshot = None
         try:
-            snapshot = SessionStore(workspace / ".nano-vibe" / "sessions").load(session_id).to_dict()
+            store = (
+                session_store_for_config(state.agent_config, workspace)
+                if state.agent_config is not None
+                else SessionStore(workspace / ".nano-vibe" / "sessions")
+            )
+            snapshot = store.load(session_id).to_dict()
         except SessionStoreError:
             pass
         return {"metadata": _session_dict(metadata), "snapshot": snapshot}
@@ -413,8 +437,11 @@ def create_app(
     async def send_message(session_id: str, payload: MessageCreate) -> dict[str, Any]:
         try:
             workspace = _session_workspace(session_id)
-            GitDiffService(workspace, session_id).ensure_baseline()
-            run_id = await state.coordinator.start(session_id, payload.text)
+            run_id = await state.coordinator.start(
+                session_id,
+                payload.text,
+                before_run=lambda: GitDiffService(workspace, session_id).ensure_baseline(),
+            )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail={"code": "session_not_found"}) from exc
         except RunConflict as exc:

@@ -6,10 +6,12 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from nano_vibe.config import AppConfig, ModelConfig, RuntimeConfig
 from nano_vibe.gui.app import EventHub, create_app
 from nano_vibe.gui.events import SessionEventBuffer
 from nano_vibe.gui.security import StartupToken
 from nano_vibe.gui.storage import AppStorage
+from nano_vibe.session_store import SessionSnapshot, SessionStore
 
 
 def _repo(path: Path) -> Path:
@@ -229,3 +231,43 @@ def test_trace_api_reads_only_requested_session_trace(tmp_path: Path) -> None:
         assert response.status_code == 200
         assert response.json()["items"][0]["event"] == "first_event"
         assert response.json()["items"][0]["secret"] == "[REDACTED]"
+
+
+def test_session_api_uses_configured_session_directory(tmp_path: Path) -> None:
+    project = _repo(tmp_path / "repo")
+    custom_dir = tmp_path / "custom-sessions"
+    config = AppConfig(
+        active_model=ModelConfig("test", "http://example.test", "test"),
+        models={"test": ModelConfig("test", "http://example.test", "test")},
+        runtime=RuntimeConfig(session_dir=str(custom_dir)),
+    )
+    storage = AppStorage(tmp_path / "app")
+    app = create_app(storage=storage, require_auth=False, runner=_holding_runner, agent_config=config, home=tmp_path)
+
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"path": str(project)}).json()["id"]
+        session_id = client.post(f"/api/v1/projects/{project_id}/sessions", json={}).json()["session_id"]
+        SessionStore(custom_dir).save(SessionSnapshot(session_id=session_id, workspace=str(project.resolve())))
+
+        response = client.get(f"/api/v1/sessions/{session_id}")
+
+        assert response.status_code == 200
+        assert response.json()["snapshot"]["session_id"] == session_id
+
+
+def test_conflicting_message_does_not_capture_new_session_baseline(tmp_path: Path) -> None:
+    project = _repo(tmp_path / "repo")
+    storage = AppStorage(tmp_path / "app")
+    app = create_app(storage=storage, require_auth=False, runner=_holding_runner, home=tmp_path)
+
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"path": str(project)}).json()["id"]
+        first = client.post(f"/api/v1/projects/{project_id}/sessions", json={}).json()["session_id"]
+        second = client.post(f"/api/v1/projects/{project_id}/sessions", json={}).json()["session_id"]
+        started = client.post(f"/api/v1/sessions/{first}/messages", json={"text": "第一项"})
+        rejected = client.post(f"/api/v1/sessions/{second}/messages", json={"text": "第二项"})
+
+        assert started.status_code == 202
+        assert rejected.status_code == 409
+        assert not (project / ".nano-vibe" / "gui" / second / "diff-baseline.json").exists()
+        client.post(f"/api/v1/runs/{started.json()['run_id']}/stop")

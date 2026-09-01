@@ -110,6 +110,27 @@ async def test_successful_write_tool_emits_diff_updated(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_successful_shell_tool_emits_diff_updated(tmp_path: Path) -> None:
+    class ShellPlanTool(UpdatePlanTool):
+        permission_scope = "shell"
+
+    machine = StateMachine()
+    machine.current = AgentState.PLAN
+    events: list[tuple[str, dict[str, Any]]] = []
+    loop = AgentLoop(
+        ScriptedModel([]),
+        ToolRegistry([ShellPlanTool(machine)]),
+        machine,
+        tmp_path,
+        on_event=lambda name, payload: events.append((name, payload)),
+    )
+
+    await loop._execute_tool(ToolCall("shell-1", "update_plan", {"items": []}))
+
+    assert ("diff_updated", {"tool": "update_plan"}) in events
+
+
+@pytest.mark.asyncio
 async def test_agent_loop_executes_tool_and_pauses_on_plain_response(tmp_path: Path) -> None:
     model = ScriptedModel(
         [

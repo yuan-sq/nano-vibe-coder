@@ -109,3 +109,51 @@ def test_diff_is_stable_for_non_git_and_unborn_repositories(tmp_path: Path) -> N
     assert body["is_git"] is True
     assert body["head"] is None
     assert body["entries"][0]["status"] == "untracked"  # type: ignore[index]
+
+
+def test_task_changed_tracks_status_and_mode_changes(tmp_path: Path) -> None:
+    repo = _repo(tmp_path / "repo")
+    tracked = repo / "tracked.txt"
+    tracked.write_text("same\n", encoding="utf-8")
+    _commit_all(repo)
+    service = GitDiffService(repo, "session-1")
+    service.ensure_baseline()
+
+    tracked.chmod(0o755)
+    entry = {item["path"]: item for item in service.snapshot().to_dict()["entries"]}["tracked.txt"]  # type: ignore[index]
+    assert entry["task_changed"] is True
+    _git(repo, "add", "tracked.txt")
+    tracked.chmod(0o644)
+    entry = {item["path"]: item for item in service.snapshot().to_dict()["entries"]}["tracked.txt"]  # type: ignore[index]
+    assert entry["task_changed"] is True
+
+
+def test_task_patch_survives_a_task_commit(tmp_path: Path) -> None:
+    repo = _repo(tmp_path / "repo")
+    tracked = repo / "tracked.txt"
+    tracked.write_text("old\n", encoding="utf-8")
+    _commit_all(repo)
+    service = GitDiffService(repo, "session-1")
+    service.ensure_baseline()
+
+    tracked.write_text("new\n", encoding="utf-8")
+    _commit_all(repo)
+    entry = service.snapshot().to_dict()["entries"][0]  # type: ignore[index]
+    assert entry["task_changed"] is True
+    assert "-old" in entry["task_patch"]
+    assert "+new" in entry["task_patch"]
+
+
+def test_rename_status_uses_destination_path(tmp_path: Path) -> None:
+    repo = _repo(tmp_path / "repo")
+    original = repo / "old.txt"
+    original.write_text("content\n", encoding="utf-8")
+    _commit_all(repo)
+    service = GitDiffService(repo, "session-1")
+    service.ensure_baseline()
+
+    _git(repo, "mv", "old.txt", "new.txt")
+
+    entries = {item["path"]: item for item in service.snapshot().to_dict()["entries"]}  # type: ignore[index]
+    assert entries["new.txt"]["git_status"] == "R "
+    assert entries["old.txt"]["deleted"] is True

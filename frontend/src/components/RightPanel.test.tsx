@@ -48,7 +48,8 @@ describe("RightPanel diff", () => {
           too_large: false,
           size: 20,
           staged_patch: null,
-          unstaged_patch: "@@ -1 +1 @@\n-old\n+new"
+          unstaged_patch: "@@ -1 +1 @@\n-old\n+new",
+          task_patch: "@@ -1 +1 @@\n-base\n+task-new"
         }]
       }}
     />);
@@ -59,6 +60,8 @@ describe("RightPanel diff", () => {
     fireEvent.click(screen.getByText("src/app.py"));
     expect(screen.getByText("+new")).toHaveClass("patch-add");
     expect(screen.getByText("-old")).toHaveClass("patch-delete");
+    expect(screen.getByText("任务相对变化")).toBeInTheDocument();
+    expect(screen.getByText("+task-new")).toHaveClass("patch-add");
     expect(container.querySelector(".diff-file")).not.toBeNull();
   });
 });

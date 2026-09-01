@@ -76,7 +76,14 @@ describe("MessageList", () => {
   it("puts the shell command in the tool summary", () => {
     render(<MessageList messages={[{ role: "tool", tool: "shell", arguments: { command: "node bs_test.mjs" }, content: "output", status: "running" }]} />);
 
-    expect(screen.getByText("运行中 shell node bs_test.mjs")).toBeInTheDocument();
+    const summary = screen.getByText("运行中 shell node bs_test.mjs");
+    const details = summary.closest("details");
+    expect(details).not.toBeNull();
+    expect(details).not.toHaveAttribute("open");
+    fireEvent.click(summary);
+    expect(details).toHaveAttribute("open");
+    expect(screen.getByText("output")).toBeInTheDocument();
+    expect(screen.getByText(/"command": "node bs_test.mjs"/)).toBeInTheDocument();
   });
 
 });

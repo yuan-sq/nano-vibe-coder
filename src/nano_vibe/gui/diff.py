@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from difflib import unified_diff
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +44,7 @@ class DiffEntry:
     size: int = 0
     staged_patch: str | None = None
     unstaged_patch: str | None = None
+    task_patch: str | None = None
     # Kept for compatibility with the original GUI diff response.
     content: str | None = None
 
@@ -61,6 +63,7 @@ class DiffEntry:
             "size": self.size,
             "staged_patch": self.staged_patch,
             "unstaged_patch": self.unstaged_patch,
+            "task_patch": self.task_patch,
             "content": self.content,
         }
 
@@ -95,6 +98,7 @@ class GitDiffService:
         self.session_id = session_id
         self.max_file_bytes = max_file_bytes
         self._baseline: DiffBaseline | None = None
+        self._baseline_contents: dict[str, str] = {}
 
     @property
     def baseline_path(self) -> Path | None:
@@ -109,6 +113,7 @@ class GitDiffService:
         if path is not None and path.is_file():
             try:
                 self._baseline = self._decode_baseline(json.loads(path.read_text(encoding="utf-8")))
+                self._baseline_contents = self._read_baseline_contents(path)
                 return self._baseline
             except (OSError, TypeError, ValueError, json.JSONDecodeError):
                 # A partial or old file must not make the read-only panel fail forever.
@@ -116,6 +121,7 @@ class GitDiffService:
         self._baseline = self._capture_baseline()
         if path is not None:
             self._write_baseline(path, self._baseline)
+            self._write_baseline_contents(path, self._baseline_contents)
         return self._baseline
 
     def capture_baseline(self) -> None:
@@ -124,6 +130,7 @@ class GitDiffService:
         path = self.baseline_path
         if path is not None:
             self._write_baseline(path, self._baseline)
+            self._write_baseline_contents(path, self._baseline_contents)
 
     def snapshot(self) -> DiffSnapshot:
         baseline = self.ensure_baseline()
@@ -140,7 +147,14 @@ class GitDiffService:
             git_status = statuses.get(path, "")
             before_digest = before.get("sha256") if before else None
             after_digest = after.get("sha256") if after else None
-            task_changed = before_digest != after_digest
+            status_changed = baseline.statuses.get(path, "") != git_status
+            mode_changed = bool(
+                before is not None
+                and after is not None
+                and before.get("mode") is not None
+                and before.get("mode") != after.get("mode")
+            )
+            task_changed = before_digest != after_digest or status_changed or mode_changed
             if not task_changed and not git_status:
                 continue
 
@@ -164,6 +178,7 @@ class GitDiffService:
             if binary or too_large:
                 staged_patch = None
                 unstaged_patch = None
+            task_patch = self._task_patch(path, before, after, binary, too_large)
             content = None
             if after is not None and not binary and not too_large:
                 try:
@@ -185,6 +200,7 @@ class GitDiffService:
                     size=size,
                     staged_patch=staged_patch,
                     unstaged_patch=unstaged_patch,
+                    task_patch=task_patch,
                     content=content,
                 )
             )
@@ -195,6 +211,7 @@ class GitDiffService:
         head = self._head() if is_git else None
         statuses = self._git_status() if is_git else {}
         files = self._file_summaries() if is_git else {}
+        self._baseline_contents = self._capture_baseline_contents(files, statuses)
         return DiffBaseline(_now(), is_git, head, statuses, files)
 
     def _decode_baseline(self, value: object) -> DiffBaseline:
@@ -222,6 +239,7 @@ class GitDiffService:
                 "sha256": summary["sha256"],
                 "size": int(summary.get("size", 0)),
                 "binary": bool(summary.get("binary", False)),
+                "mode": summary.get("mode"),
             }
         return DiffBaseline(captured_at, is_git, head, statuses, files)
 
@@ -248,6 +266,58 @@ class GitDiffService:
         finally:
             if temporary_path.exists():
                 temporary_path.unlink()
+
+    def _read_baseline_contents(self, path: Path) -> dict[str, str]:
+        content_path = path.with_name("diff-baseline-content.json")
+        if not content_path.is_file():
+            return {}
+        try:
+            value = json.loads(content_path.read_text(encoding="utf-8"))
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            return {}
+        files = value.get("files", {}) if isinstance(value, dict) else {}
+        return {
+            str(relative): str(content)
+            for relative, content in files.items()
+            if isinstance(relative, str) and isinstance(content, str)
+        } if isinstance(files, dict) else {}
+
+    def _write_baseline_contents(self, path: Path, contents: dict[str, str]) -> None:
+        self._write_json_atomically(
+            path.with_name("diff-baseline-content.json"),
+            {"version": 1, "files": contents},
+        )
+
+    @staticmethod
+    def _write_json_atomically(path: Path, payload: dict[str, Any]) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+        temporary_path = Path(temporary)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, ensure_ascii=False, sort_keys=True)
+                handle.write("\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary_path, path)
+        finally:
+            if temporary_path.exists():
+                temporary_path.unlink()
+
+    def _capture_baseline_contents(
+        self,
+        files: dict[str, dict[str, Any]],
+        statuses: dict[str, str],
+    ) -> dict[str, str]:
+        contents: dict[str, str] = {}
+        for path, summary in files.items():
+            if not statuses.get(path) or summary.get("binary") or int(summary.get("size", 0)) > self.max_file_bytes:
+                continue
+            try:
+                contents[path] = (self.workspace / path).read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+        return contents
 
     def _is_git(self) -> bool:
         result = self._run_git("rev-parse", "--is-inside-work-tree")
@@ -280,6 +350,7 @@ class GitDiffService:
                 "sha256": hashlib.sha256(raw).hexdigest(),
                 "size": len(raw),
                 "binary": b"\x00" in raw,
+                "mode": path.stat().st_mode & 0o7777,
             }
         return summaries
 
@@ -298,9 +369,11 @@ class GitDiffService:
             xy = field[:2].decode("ascii", errors="replace")
             path_bytes = field[3:]
             path = path_bytes.decode("utf-8", errors="surrogateescape")
-            if ("R" in xy or "C" in xy) and index < len(fields):
-                # Porcelain -z puts the destination after the source for renames/copies.
-                path = fields[index].decode("utf-8", errors="surrogateescape")
+            if "R" in xy or "C" in xy:
+                # With -z porcelain v1 emits the destination first, then the source.
+                # Keep the destination as the status key and consume the source.
+                if index >= len(fields):
+                    continue
                 index += 1
             if not self._is_internal_relative(path):
                 statuses[path] = xy
@@ -321,10 +394,11 @@ class GitDiffService:
                 values.append((self.workspace / path).read_bytes())
             except OSError:
                 pass
-        if before is not None and (deleted or not after):
+        if before is not None:
             if before.get("binary"):
                 values.append(b"\x00")
-            values.append(b"x" * min(int(before.get("size", 0)), self.max_file_bytes + 1))
+            if int(before.get("size", 0)) > self.max_file_bytes:
+                values.append(b"x" * (self.max_file_bytes + 1))
         if staged:
             value = self._git_blob(path, "HEAD")
             if value is not None:
@@ -338,6 +412,46 @@ class GitDiffService:
     def _git_blob(self, path: str, ref: str) -> bytes | None:
         result = self._run_git("show", f"{ref}:{path}")
         return result.stdout if result.returncode == 0 else None
+
+    def _task_patch(
+        self,
+        path: str,
+        before: dict[str, Any] | None,
+        after: dict[str, Any] | None,
+        binary: bool,
+        too_large: bool,
+    ) -> str | None:
+        if binary or too_large:
+            return None
+        if path in self._baseline_contents:
+            baseline = self._baseline_contents[path].encode("utf-8")
+        elif self._baseline and self._baseline.head:
+            baseline = self._git_blob(path, self._baseline.head) or b""
+        else:
+            baseline = b""
+        if len(baseline) > self.max_file_bytes:
+            return None
+        if after is None:
+            current = b""
+        else:
+            try:
+                current = (self.workspace / path).read_bytes()
+            except OSError:
+                return None
+        if len(current) > self.max_file_bytes or current == baseline:
+            return None
+        old_lines = baseline.decode("utf-8", errors="replace").splitlines(keepends=True)
+        new_lines = current.decode("utf-8", errors="replace").splitlines(keepends=True)
+        patch = "".join(
+            unified_diff(
+                old_lines,
+                new_lines,
+                fromfile=f"a/{path}",
+                tofile=f"b/{path}",
+                lineterm="\n",
+            )
+        )
+        return patch or None
 
     def _patch(self, path: str, *, staged: bool, untracked: bool) -> str | None:
         if untracked:

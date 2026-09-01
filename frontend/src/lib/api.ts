@@ -16,6 +16,7 @@ export interface DiffEntry {
   size: number;
   staged_patch: string | null;
   unstaged_patch: string | null;
+  task_patch?: string | null;
   content?: string | null;
 }
 export interface DiffSnapshot {

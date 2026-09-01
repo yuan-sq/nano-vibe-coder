@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ChatMessage } from "../lib/protocol";
 import type { PendingInteraction } from "../lib/protocol";
 import { MarkdownContent } from "./MarkdownContent";
@@ -38,8 +38,13 @@ function ToolMessage({ message }: { message: ChatMessage }) {
 }
 
 export function MessageList({ messages }: { messages: ChatMessage[] }) {
+  const listRef = useRef<HTMLDivElement>(null);
   const visibleMessages = messages.filter((message) => message.role !== "assistant" || message.content.trim());
-  return <div className="message-list">
+  useEffect(() => {
+    const element = listRef.current;
+    if (element) element.scrollTop = element.scrollHeight;
+  }, [messages]);
+  return <div className="message-list" ref={listRef}>
     {visibleMessages.length === 0 && <div className="empty-state">发送一个任务开始工作</div>}
     {visibleMessages.map((message, index) => {
       const key = `${message.toolCallId ?? message.role}-${index}`;

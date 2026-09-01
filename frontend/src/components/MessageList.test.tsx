@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { InteractionCard, MessageList } from "./MessageList";
 import { MarkdownContent } from "./MarkdownContent";
@@ -84,6 +84,17 @@ describe("MessageList", () => {
     expect(details).toHaveAttribute("open");
     expect(screen.getByText("output")).toBeInTheDocument();
     expect(screen.getByText(/"command": "node bs_test.mjs"/)).toBeInTheDocument();
+  });
+
+  it("scrolls to the newest message when messages update", async () => {
+    const { container, rerender } = render(<MessageList messages={[{ role: "assistant", content: "第一段" }]} />);
+    const list = container.querySelector(".message-list");
+    expect(list).not.toBeNull();
+    Object.defineProperty(list, "scrollHeight", { configurable: true, value: 240 });
+
+    rerender(<MessageList messages={[{ role: "assistant", content: "第一段" }, { role: "assistant", content: "第二段" }]} />);
+
+    await waitFor(() => expect(list).toHaveProperty("scrollTop", 240));
   });
 
 });

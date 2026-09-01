@@ -258,6 +258,14 @@ def _session_dict(session: SessionMetadata) -> dict[str, Any]:
     }
 
 
+def _capture_diff_baseline(workspace: Path, session_id: str) -> None:
+    GitDiffService(workspace, session_id).ensure_baseline()
+
+
+def _snapshot_diff(workspace: Path, session_id: str) -> dict[str, object]:
+    return GitDiffService(workspace, session_id).snapshot().to_dict()
+
+
 def create_app(
     *,
     storage: AppStorage | None = None,
@@ -440,7 +448,9 @@ def create_app(
             run_id = await state.coordinator.start(
                 session_id,
                 payload.text,
-                before_run=lambda: GitDiffService(workspace, session_id).ensure_baseline(),
+                before_run=lambda: asyncio.to_thread(
+                    _capture_diff_baseline, workspace, session_id
+                ),
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail={"code": "session_not_found"}) from exc
@@ -448,6 +458,11 @@ def create_app(
             raise HTTPException(
                 status_code=409,
                 detail={"code": "run_conflict", "active_run_id": exc.active_run_id},
+            ) from exc
+        except (OSError, ValueError) as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "diff_unavailable", "message": str(exc)},
             ) from exc
         return {"run_id": run_id, "status": "RUNNING"}
 
@@ -467,7 +482,13 @@ def create_app(
     @app.get("/api/v1/sessions/{session_id}/diff", dependencies=[Depends(auth)])
     async def session_diff(session_id: str) -> dict[str, object]:
         workspace = _session_workspace(session_id)
-        return GitDiffService(workspace, session_id).snapshot().to_dict()
+        try:
+            return await asyncio.to_thread(_snapshot_diff, workspace, session_id)
+        except (OSError, ValueError) as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "diff_unavailable", "message": str(exc)},
+            ) from exc
 
     @app.get("/api/v1/sessions/{session_id}/trace", dependencies=[Depends(auth)])
     async def session_trace(

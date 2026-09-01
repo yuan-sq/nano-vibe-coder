@@ -1,6 +1,7 @@
 import asyncio
 import json
 import subprocess
+import threading
 from pathlib import Path
 
 import pytest
@@ -210,6 +211,66 @@ def test_first_message_captures_diff_baseline_and_diff_api_reuses_it(tmp_path: P
         assert body["baseline_captured_at"] == captured_at
         assert body["entries"][0]["task_changed"] is True
         client.post(f"/api/v1/runs/{response.json()['run_id']}/stop")
+
+
+def test_diff_api_snapshots_in_worker_thread(tmp_path: Path, monkeypatch) -> None:
+    project = _repo(tmp_path / "repo")
+    app = create_app(
+        storage=AppStorage(tmp_path / "app"), require_auth=False, home=tmp_path
+    )
+    observed: list[threading.Thread] = []
+
+    def fake_snapshot(workspace: Path, session_id: str) -> dict[str, object]:
+        observed.append(threading.current_thread())
+        return {
+            "is_git": False,
+            "head": None,
+            "baseline_captured_at": "test",
+            "entries": [],
+        }
+
+    monkeypatch.setattr("nano_vibe.gui.app._snapshot_diff", fake_snapshot)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"path": str(project)}).json()["id"]
+        session_id = client.post(
+            f"/api/v1/projects/{project_id}/sessions", json={}
+        ).json()["session_id"]
+        response = client.get(f"/api/v1/sessions/{session_id}/diff")
+
+    assert response.status_code == 200
+    assert observed
+    assert all(thread is not threading.main_thread() for thread in observed)
+
+
+def test_first_message_captures_diff_baseline_in_worker_thread(
+    tmp_path: Path, monkeypatch
+) -> None:
+    project = _repo(tmp_path / "repo")
+    app = create_app(
+        storage=AppStorage(tmp_path / "app"),
+        require_auth=False,
+        runner=_holding_runner,
+        home=tmp_path,
+    )
+    observed: list[threading.Thread] = []
+
+    def fake_capture(workspace: Path, session_id: str) -> None:
+        observed.append(threading.current_thread())
+
+    monkeypatch.setattr("nano_vibe.gui.app._capture_diff_baseline", fake_capture)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"path": str(project)}).json()["id"]
+        session_id = client.post(
+            f"/api/v1/projects/{project_id}/sessions", json={}
+        ).json()["session_id"]
+        response = client.post(
+            f"/api/v1/sessions/{session_id}/messages", json={"text": "修改"}
+        )
+        client.post(f"/api/v1/runs/{response.json()['run_id']}/stop")
+
+    assert response.status_code == 202
+    assert observed
+    assert all(thread is not threading.main_thread() for thread in observed)
 
 
 def test_trace_api_reads_only_requested_session_trace(tmp_path: Path) -> None:

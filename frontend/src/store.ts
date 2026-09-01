@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { applyEvent, initialRuntime, parsePlanItems, type AgentState, type ChatMessage, type RuntimeView, type UIEvent } from "./lib/protocol";
+import { applyEvent, initialRuntime, parsePlanItems, type AgentState, type ChatMessage, type PermissionMode, type RuntimeView, type UIEvent } from "./lib/protocol";
 
 interface GuiStore {
   activeSessionId: string | null;
@@ -10,6 +10,7 @@ interface GuiStore {
   ingest: (event: UIEvent) => void;
   hydrate: (sessionId: string, snapshot: Record<string, unknown> | null, source?: "initial" | "resync") => void;
   setLastSeq: (sessionId: string, seq: number) => void;
+  setPermissionMode: (sessionId: string, mode: PermissionMode) => void;
   setConnected: (connected: boolean) => void;
   reset: () => void;
 }
@@ -72,6 +73,9 @@ export const useGuiStore = create<GuiStore>((set) => ({
         : typeof snapshot.state === "string" && ["REQUIREMENTS", "PLAN", "IMPLEMENT", "VERIFY", "DONE"].includes(snapshot.state)
           ? snapshot.state as AgentState
           : "REQUIREMENTS",
+      permissionMode: snapshot.permission_mode === "full-access" || snapshot.permission_mode === "normal"
+        ? snapshot.permission_mode
+        : current.permissionMode,
       messages: hasLiveEvents ? current.messages : messages,
       plan: hasLiveEvents
         ? current.plan
@@ -90,6 +94,10 @@ export const useGuiStore = create<GuiStore>((set) => ({
     const current = state.runtimes[sessionId] ?? initialRuntime(sessionId);
     if (seq <= current.lastSeq) return state;
     return { runtimes: { ...state.runtimes, [sessionId]: { ...current, lastSeq: seq } } };
+  }),
+  setPermissionMode: (sessionId, mode) => set((state) => {
+    const current = state.runtimes[sessionId] ?? initialRuntime(sessionId);
+    return { runtimes: { ...state.runtimes, [sessionId]: { ...current, permissionMode: mode } } };
   }),
   setConnected: (connected) => set({ connected }),
   reset: () => set({ activeSessionId: null, runtimes: {}, unreadSessions: [], connected: false })

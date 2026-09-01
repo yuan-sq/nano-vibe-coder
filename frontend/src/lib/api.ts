@@ -1,4 +1,4 @@
-import type { PendingInteraction, UIEvent } from "./protocol";
+import type { PendingInteraction, PermissionMode, UIEvent } from "./protocol";
 
 export interface Project { id: string; path: string; name: string; created_at: string; last_opened_at: string }
 export interface Session { session_id: string; project_id: string; title: string; archived: boolean; created_at: string; updated_at: string }
@@ -64,7 +64,10 @@ export class GuiApi {
   async sessions(projectId: string): Promise<Session[]> { return this.request(`/api/v1/projects/${projectId}/sessions`); }
   async createSession(projectId: string, title?: string): Promise<Session> { return this.request(`/api/v1/projects/${projectId}/sessions`, { method: "POST", body: JSON.stringify({ title }) }); }
   async updateSession(sessionId: string, update: { title?: string; archived?: boolean }): Promise<Session> { return this.request(`/api/v1/sessions/${sessionId}`, { method: "PATCH", body: JSON.stringify(update) }); }
-  async session(sessionId: string): Promise<{ metadata: Session; snapshot: Record<string, unknown> | null }> { return this.request(`/api/v1/sessions/${sessionId}`); }
+  async session(sessionId: string): Promise<{ metadata: Session; snapshot: Record<string, unknown> | null; permission_mode: PermissionMode }> { return this.request(`/api/v1/sessions/${sessionId}`); }
+  async updatePermissionMode(sessionId: string, permissionMode: PermissionMode): Promise<{ session_id: string; permission_mode: PermissionMode }> {
+    return this.request(`/api/v1/sessions/${sessionId}/permission-mode`, { method: "PATCH", body: JSON.stringify({ permission_mode: permissionMode }) });
+  }
   async sendMessage(sessionId: string, text: string): Promise<{ run_id: string; status: string }> { return this.request(`/api/v1/sessions/${sessionId}/messages`, { method: "POST", body: JSON.stringify({ text }) }); }
   async stopRun(runId: string): Promise<{ run_id: string; status: string }> { return this.request(`/api/v1/runs/${runId}/stop`, { method: "POST" }); }
   async diff(sessionId: string): Promise<DiffSnapshot> { return this.request(`/api/v1/sessions/${sessionId}/diff`); }

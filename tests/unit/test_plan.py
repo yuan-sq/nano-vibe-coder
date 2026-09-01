@@ -1,8 +1,26 @@
+from pathlib import Path
+
 import pytest
 
 from nano_vibe.agent.plan import PlanTodoList, TodoStatus
 from nano_vibe.agent.state import AgentState, InvalidTransition, StateMachine
 from nano_vibe.tools.update_plan import UpdatePlanTool
+
+
+def test_update_plan_description_requires_timely_progress_updates() -> None:
+    assert "及时" in UpdatePlanTool.description
+    assert "每个逻辑单元" in UpdatePlanTool.description
+    assert "完成后" in UpdatePlanTool.description
+
+
+def test_implement_stage_prompt_requires_plan_updates_before_and_after_work() -> None:
+    prompt = (Path(__file__).parents[2] / "src/nano_vibe/prompts/stages.md").read_text(
+        encoding="utf-8"
+    )
+    implement = next(line for line in prompt.splitlines() if line.startswith("IMPLEMENT:"))
+    assert "开始前" in implement
+    assert "完成后" in implement
+    assert "update_plan" in implement
 
 
 def in_verify(machine: StateMachine | None = None) -> StateMachine:

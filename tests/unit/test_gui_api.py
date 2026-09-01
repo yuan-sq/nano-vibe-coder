@@ -47,6 +47,141 @@ def test_project_and_session_rest_api(tmp_path: Path) -> None:
     assert renamed.json()["archived"] is True
 
 
+def test_session_permission_mode_uses_default_and_persists_snapshot(
+    tmp_path: Path,
+) -> None:
+    project = _repo(tmp_path / "repo")
+    config = AppConfig(
+        active_model=ModelConfig("test", "http://example.test", "test"),
+        models={"test": ModelConfig("test", "http://example.test", "test")},
+        runtime=RuntimeConfig(permission_mode="full-access"),
+    )
+    storage = AppStorage(tmp_path / "app")
+    app = create_app(
+        storage=storage,
+        require_auth=False,
+        runner=_holding_runner,
+        agent_config=config,
+        home=tmp_path,
+    )
+
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"path": str(project)}).json()["id"]
+        session_id = client.post(f"/api/v1/projects/{project_id}/sessions", json={}).json()["session_id"]
+
+        initial = client.get(f"/api/v1/sessions/{session_id}")
+        assert initial.status_code == 200
+        assert initial.json()["permission_mode"] == "full-access"
+        assert initial.json()["snapshot"] is None
+
+        changed = client.patch(
+            f"/api/v1/sessions/{session_id}/permission-mode",
+            json={"permission_mode": "normal"},
+        )
+        assert changed.status_code == 200
+        assert changed.json() == {"session_id": session_id, "permission_mode": "normal"}
+
+        snapshot = SessionStore(project / ".nano-vibe" / "sessions").load(session_id)
+        assert snapshot.permission_mode == "normal"
+        assert snapshot.workspace == str(project.resolve())
+        assert snapshot.runtime_state == "IDLE"
+
+        loaded = client.get(f"/api/v1/sessions/{session_id}").json()
+        assert loaded["permission_mode"] == "normal"
+        assert loaded["snapshot"]["permission_mode"] == "normal"
+
+
+def test_session_permission_mode_preserves_grants_and_rejects_non_idle(
+    tmp_path: Path,
+) -> None:
+    project = _repo(tmp_path / "repo")
+    storage = AppStorage(tmp_path / "app")
+    app = create_app(
+        storage=storage,
+        require_auth=False,
+        runner=_holding_runner,
+        home=tmp_path,
+    )
+
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"path": str(project)}).json()["id"]
+        session_id = client.post(f"/api/v1/projects/{project_id}/sessions", json={}).json()["session_id"]
+        store = SessionStore(project / ".nano-vibe" / "sessions")
+        store.save(
+            SessionSnapshot(
+                session_id=session_id,
+                workspace=str(project.resolve()),
+                permission_mode="normal",
+                session_grants=["shell"],
+                history=[{"role": "user", "content": "保留"}],
+                runtime_state="IDLE",
+            )
+        )
+
+        changed = client.patch(
+            f"/api/v1/sessions/{session_id}/permission-mode",
+            json={"permission_mode": "full-access"},
+        )
+        assert changed.status_code == 200
+        updated = store.load(session_id)
+        assert updated.permission_mode == "full-access"
+        assert updated.session_grants == ["shell"]
+        assert updated.history == [{"role": "user", "content": "保留"}]
+
+        updated.runtime_state = "PAUSED"
+        store.save(updated)
+        rejected = client.patch(
+            f"/api/v1/sessions/{session_id}/permission-mode",
+            json={"permission_mode": "normal"},
+        )
+        assert rejected.status_code == 409
+        assert rejected.json()["detail"]["code"] == "session_not_idle"
+
+
+def test_session_permission_mode_rejects_invalid_and_unknown_session(
+    tmp_path: Path,
+) -> None:
+    app = create_app(storage=AppStorage(tmp_path / "app"), require_auth=False, home=tmp_path)
+    with TestClient(app) as client:
+        invalid = client.patch(
+            "/api/v1/sessions/missing/permission-mode",
+            json={"permission_mode": "sandbox"},
+        )
+        assert invalid.status_code == 422
+
+        missing = client.patch(
+            "/api/v1/sessions/missing/permission-mode",
+            json={"permission_mode": "normal"},
+        )
+        assert missing.status_code == 404
+        assert missing.json()["detail"]["code"] == "session_not_found"
+
+
+def test_session_permission_mode_conflicts_with_active_run(tmp_path: Path) -> None:
+    project = _repo(tmp_path / "repo")
+    storage = AppStorage(tmp_path / "app")
+    app = create_app(
+        storage=storage,
+        require_auth=False,
+        runner=_holding_runner,
+        home=tmp_path,
+    )
+
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"path": str(project)}).json()["id"]
+        session_id = client.post(f"/api/v1/projects/{project_id}/sessions", json={}).json()["session_id"]
+        started = client.post(f"/api/v1/sessions/{session_id}/messages", json={"text": "运行"})
+        assert started.status_code == 202
+
+        conflict = client.patch(
+            f"/api/v1/sessions/{session_id}/permission-mode",
+            json={"permission_mode": "full-access"},
+        )
+        assert conflict.status_code == 409
+        assert conflict.json()["detail"]["code"] == "run_conflict"
+        client.post(f"/api/v1/runs/{started.json()['run_id']}/stop")
+
+
 def test_native_project_picker_registers_selected_repository(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -39,6 +39,19 @@ describe("GUI store", () => {
     expect(runtime.plan).toEqual([{ id: "one", content: "检查代码", status: "pending" }]);
   });
 
+  it("hydrates and updates the persisted permission mode", () => {
+    useGuiStore.getState().reset();
+    useGuiStore.getState().hydrate("session-1", {
+      runtime_state: "IDLE",
+      permission_mode: "full-access",
+      history: []
+    });
+    expect(useGuiStore.getState().runtimes["session-1"].permissionMode).toBe("full-access");
+
+    useGuiStore.getState().setPermissionMode("session-1", "normal");
+    expect(useGuiStore.getState().runtimes["session-1"].permissionMode).toBe("normal");
+  });
+
   it("resets a stale runtime when the server has no usable snapshot", () => {
     useGuiStore.getState().reset();
     useGuiStore.getState().hydrate("session-1", {

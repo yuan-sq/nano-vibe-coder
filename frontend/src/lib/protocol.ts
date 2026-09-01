@@ -7,6 +7,8 @@ export type RuntimeState =
   | "PAUSED"
   | "ERROR";
 
+export type PermissionMode = "normal" | "full-access";
+
 export type AgentState = "REQUIREMENTS" | "PLAN" | "IMPLEMENT" | "VERIFY" | "DONE";
 export type ToolStatus = "running" | "completed" | "failed";
 export type PlanStatus = "pending" | "in_progress" | "completed";
@@ -70,6 +72,7 @@ export interface RuntimeView {
   runId: string | null;
   runtimeState: RuntimeState;
   agentState: AgentState;
+  permissionMode: PermissionMode;
   messages: ChatMessage[];
   pendingInteraction: PendingInteraction | null;
   plan: PlanItem[];
@@ -81,6 +84,7 @@ export const initialRuntime = (sessionId: string): RuntimeView => ({
   runId: null,
   runtimeState: "IDLE",
   agentState: "REQUIREMENTS",
+  permissionMode: "normal",
   messages: [],
   pendingInteraction: null,
   plan: [],

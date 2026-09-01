@@ -9,6 +9,9 @@ const testState = vi.hoisted(() => ({
   sockets: [] as Array<{ failInteraction: () => void; failCleanup: () => void }>,
   returnCleanSnapshot: false,
   returnMissingSnapshot: false,
+  returnIdleSnapshot: false,
+  permissionMode: "normal" as "normal" | "full-access",
+  updatePermissionModeCalls: 0,
   sendCalls: 0,
   releaseSend: null as (() => void) | null
 }));
@@ -27,8 +30,13 @@ vi.mock("./lib/api", () => ({
               runtime_state: "AWAITING_APPROVAL",
               pending_interaction: { interaction_id: "stale-1", kind: "approval", content: "确认" }
             }
-          : { runtime_state: "PAUSED", pending_interaction: null }
+          : { runtime_state: testState.returnIdleSnapshot ? "IDLE" : "PAUSED", pending_interaction: null, permission_mode: testState.permissionMode }
       };
+    }
+    async updatePermissionMode(_sessionId: string, mode: "normal" | "full-access") {
+      testState.updatePermissionModeCalls += 1;
+      testState.permissionMode = mode;
+      return { session_id: "session-1", permission_mode: mode };
     }
     async sendMessage() {
       testState.sendCalls += 1;
@@ -78,6 +86,9 @@ describe("App shell layout", () => {
     testState.sockets.length = 0;
     testState.returnCleanSnapshot = false;
     testState.returnMissingSnapshot = false;
+    testState.returnIdleSnapshot = false;
+    testState.permissionMode = "normal";
+    testState.updatePermissionModeCalls = 0;
     testState.sendCalls = 0;
     testState.releaseSend = null;
   });
@@ -160,5 +171,20 @@ describe("App shell layout", () => {
     expect(sendButton).toBeDisabled();
     testState.releaseSend?.();
     await waitFor(() => expect(testState.releaseSend).toBeNull());
+  });
+
+  it("switches the active Session permission mode from the heading", async () => {
+    useGuiStore.getState().setActiveSession("session-1");
+    testState.returnCleanSnapshot = true;
+    testState.returnIdleSnapshot = true;
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><App /></QueryClientProvider>);
+
+    const selector = await screen.findByRole("button", { name: "权限模式：Normal" });
+    fireEvent.click(selector);
+    fireEvent.click(screen.getByRole("menuitem", { name: /Full Access/ }));
+
+    await waitFor(() => expect(testState.updatePermissionModeCalls).toBe(1));
+    expect(useGuiStore.getState().runtimes["session-1"]?.permissionMode).toBe("full-access");
   });
 });

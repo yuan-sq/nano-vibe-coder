@@ -11,7 +11,11 @@ from .base import Tool, ToolResult
 
 class UpdatePlanTool(Tool):
     name = "update_plan"
-    description = "Replace the structured plan with pending, in_progress, or completed todo items."
+    description = (
+        "维护结构化执行计划。请及时调用本工具：开始每个逻辑单元前将对应 Todo 标为 "
+        "in_progress，完成后立即标为 completed，并将下一项推进为 in_progress；计划、范围、"
+        "阻塞或验证结果发生变化时也要同步更新，进入 VERIFY 或 DONE 前确保计划状态准确。"
+    )
     permission_scope = "plan"
     parameters: ClassVar[dict[str, Any]] = {
         "type": "object",

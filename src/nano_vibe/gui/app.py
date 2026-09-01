@@ -9,8 +9,9 @@ import uuid
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,7 +21,7 @@ from pydantic import BaseModel, Field
 from nano_vibe.config import AppConfig
 from nano_vibe.observability.trace import trace_path
 from nano_vibe.session import session_store_for_config
-from nano_vibe.session_store import SessionStore, SessionStoreError
+from nano_vibe.session_store import SessionSnapshot, SessionStore, SessionStoreError
 
 from .agent_runner import GuiAgentRunner, StalePendingCleanupError
 from .diff import GitDiffService
@@ -50,6 +51,10 @@ class SessionCreate(BaseModel):
 class SessionUpdate(BaseModel):
     title: str | None = None
     archived: bool | None = None
+
+
+class PermissionModeUpdate(BaseModel):
+    permission_mode: Literal["normal", "full-access"]
 
 
 class MessageCreate(BaseModel):
@@ -169,6 +174,20 @@ class TaskCoordinator:
             task = asyncio.create_task(self._run(run_id, session_id, text, stop_event))
             self._active = ActiveRun(run_id, session_id, task, stop_event)
             return run_id
+
+    async def run_if_session_idle(
+        self, session_id: str, operation: Callable[[], Any]
+    ) -> Any:
+        """Run a session mutation without racing a new task for that session."""
+
+        async with self._guard:
+            active = self._active
+            if active is not None and not active.task.done() and active.session_id == session_id:
+                raise RunConflict(active.run_id)
+            result = operation()
+            if inspect.isawaitable(result):
+                return await result
+            return result
 
     async def _run(
         self, run_id: str, session_id: str, text: str, stop_event: asyncio.Event
@@ -466,7 +485,76 @@ def create_app(
             snapshot = store.load(session_id).to_dict()
         except SessionStoreError:
             pass
-        return {"metadata": _session_dict(metadata), "snapshot": snapshot}
+        default_mode = (
+            state.agent_config.runtime.permission_mode
+            if state.agent_config is not None
+            else "normal"
+        )
+        return {
+            "metadata": _session_dict(metadata),
+            "snapshot": snapshot,
+            "permission_mode": snapshot["permission_mode"] if snapshot is not None else default_mode,
+        }
+
+    @app.patch("/api/v1/sessions/{session_id}/permission-mode", dependencies=[Depends(auth)])
+    async def update_permission_mode(
+        session_id: str, payload: PermissionModeUpdate
+    ) -> dict[str, str]:
+        try:
+            metadata = state.storage.get_session(session_id)
+            workspace = Path(state.storage.get_project(metadata.project_id).path)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail={"code": "session_not_found"}) from exc
+
+        def update_snapshot() -> SessionSnapshot:
+            store = (
+                session_store_for_config(state.agent_config, workspace)
+                if state.agent_config is not None
+                else SessionStore(workspace / ".nano-vibe" / "sessions")
+            )
+            snapshot_path = store.path_for(session_id)
+            if snapshot_path.is_file():
+                try:
+                    snapshot = store.load(session_id)
+                except SessionStoreError as exc:
+                    raise HTTPException(
+                        status_code=503,
+                        detail={"code": "session_snapshot_unavailable", "message": str(exc)},
+                    ) from exc
+            else:
+                snapshot = SessionSnapshot(
+                    session_id=session_id,
+                    workspace=str(workspace.resolve()),
+                    permission_mode=(
+                        state.agent_config.runtime.permission_mode
+                        if state.agent_config is not None
+                        else "normal"
+                    ),
+                )
+            if snapshot.runtime_state != "IDLE":
+                raise HTTPException(
+                    status_code=409,
+                    detail={"code": "session_not_idle", "runtime_state": snapshot.runtime_state},
+                )
+            snapshot.permission_mode = payload.permission_mode
+            snapshot.updated_at = datetime.now(timezone.utc).isoformat()
+            try:
+                store.save(snapshot)
+            except (OSError, SessionStoreError) as exc:
+                raise HTTPException(
+                    status_code=503,
+                    detail={"code": "permission_mode_persist_failed", "message": str(exc)},
+                ) from exc
+            return snapshot
+
+        try:
+            await state.coordinator.run_if_session_idle(session_id, update_snapshot)
+        except RunConflict as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "run_conflict", "active_run_id": exc.active_run_id},
+            ) from exc
+        return {"session_id": session_id, "permission_mode": payload.permission_mode}
 
     @app.post("/api/v1/sessions/{session_id}/messages", status_code=202, dependencies=[Depends(auth)])
     async def send_message(session_id: str, payload: MessageCreate) -> dict[str, Any]:

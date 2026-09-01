@@ -25,6 +25,7 @@ from nano_vibe.session_store import SessionStore, SessionStoreError
 from .agent_runner import GuiAgentRunner, StalePendingCleanupError
 from .diff import GitDiffService
 from .events import SessionEventBuffer
+from .project_picker import ProjectPickerCancelled, ProjectPickerUnavailable, choose_directory
 from .runtime import GlobalRunLock, LockAcquisitionError
 from .security import SecretStore, StartupToken, is_allowed_origin, validate_project_path
 from .storage import AppStorage, ProjectRecord, SessionMetadata
@@ -389,6 +390,29 @@ def create_app(
             return _project_dict(state.storage.add_project(path, name=payload.name))
         except ValueError as exc:
             raise HTTPException(status_code=400, detail={"code": "invalid_project", "message": str(exc)}) from exc
+
+    @app.post("/api/v1/projects/select", status_code=201, dependencies=[Depends(auth)])
+    async def select_project() -> dict[str, Any]:
+        try:
+            selected = await asyncio.to_thread(choose_directory)
+        except ProjectPickerCancelled as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "project_selection_cancelled"},
+            ) from exc
+        except ProjectPickerUnavailable as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "project_picker_unavailable", "message": str(exc)},
+            ) from exc
+        try:
+            path = validate_project_path(selected, home=state.home)
+            return _project_dict(state.storage.add_project(path))
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "invalid_project", "message": str(exc)},
+            ) from exc
 
     @app.delete(
         "/api/v1/projects/{project_id}",

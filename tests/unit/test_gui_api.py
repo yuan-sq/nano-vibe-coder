@@ -47,6 +47,60 @@ def test_project_and_session_rest_api(tmp_path: Path) -> None:
     assert renamed.json()["archived"] is True
 
 
+def test_native_project_picker_registers_selected_repository(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = _repo(tmp_path / "selected-repo")
+    app = create_app(
+        storage=AppStorage(tmp_path / "app"),
+        require_auth=False,
+        home=tmp_path,
+    )
+    monkeypatch.setattr("nano_vibe.gui.app.choose_directory", lambda: project)
+
+    with TestClient(app) as client:
+        response = client.post("/api/v1/projects/select", json={})
+
+        assert response.status_code == 201
+        assert response.json()["path"] == str(project.resolve())
+
+
+def test_native_project_picker_cancel_is_not_an_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from nano_vibe.gui.project_picker import ProjectPickerCancelled
+
+    app = create_app(storage=AppStorage(tmp_path / "app"), require_auth=False, home=tmp_path)
+    monkeypatch.setattr(
+        "nano_vibe.gui.app.choose_directory",
+        lambda: (_ for _ in ()).throw(ProjectPickerCancelled()),
+    )
+
+    with TestClient(app) as client:
+        response = client.post("/api/v1/projects/select", json={})
+
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "project_selection_cancelled"
+
+
+def test_native_project_picker_failure_is_reported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from nano_vibe.gui.project_picker import ProjectPickerUnavailable
+
+    app = create_app(storage=AppStorage(tmp_path / "app"), require_auth=False, home=tmp_path)
+    monkeypatch.setattr(
+        "nano_vibe.gui.app.choose_directory",
+        lambda: (_ for _ in ()).throw(ProjectPickerUnavailable("osascript is unavailable")),
+    )
+
+    with TestClient(app) as client:
+        response = client.post("/api/v1/projects/select", json={})
+
+        assert response.status_code == 503
+        assert response.json()["detail"]["code"] == "project_picker_unavailable"
+
+
 def test_auth_exchange_is_origin_checked_and_single_use(tmp_path: Path) -> None:
     token = StartupToken()
     app = create_app(

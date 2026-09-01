@@ -13,7 +13,7 @@ from nano_vibe.config import AppConfig, ConfigError, load_config
 from nano_vibe.tools.base import ToolResult
 from nano_vibe.tools.web_search import WebSearchTool, load_env_file
 
-DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "config.toml"
+DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config.toml"
 EXIT_OK = 0
 EXIT_SERVICE_ERROR = 1
 EXIT_CONFIG_ERROR = 2

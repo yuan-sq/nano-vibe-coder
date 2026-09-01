@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Any
 
 from nano_vibe.models.base import ModelResponse
-from test_llm_service import main
+from scripts.test_llm_service import main
 
 
 def write_config(path: Path, api_key: str = "secret-key") -> None:
@@ -30,7 +30,7 @@ def test_main_reports_pass_for_a_non_empty_model_response(tmp_path: Path, capsys
             assert tools == []
             return ModelResponse(content="OK")
 
-    monkeypatch.setattr("test_llm_service.create_model", lambda config: FakeModel())
+    monkeypatch.setattr("scripts.test_llm_service.create_model", lambda config: FakeModel())
 
     assert main(["--config", str(config_path)]) == 0
     assert "PASS" in capsys.readouterr().out
@@ -52,7 +52,7 @@ def test_main_redacts_api_key_when_service_fails(tmp_path: Path, capsys: Any, mo
         async def complete(self, messages: Any, tools: Any) -> ModelResponse:
             raise RuntimeError("request failed with secret-key")
 
-    monkeypatch.setattr("test_llm_service.create_model", lambda config: FailingModel())
+    monkeypatch.setattr("scripts.test_llm_service.create_model", lambda config: FailingModel())
 
     assert main(["--config", str(config_path)]) == 1
     captured = capsys.readouterr()

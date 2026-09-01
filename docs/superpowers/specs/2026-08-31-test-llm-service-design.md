@@ -2,21 +2,21 @@
 
 ## 目标
 
-在仓库根目录提供一个可直接运行的脚本，用当前项目的 `config.toml` 验证
+在 `scripts/` 目录提供一个可直接运行的脚本，用当前项目的 `config.toml` 验证
 OpenAI-compatible LLM 服务是否可访问、鉴权是否有效、模型是否能返回响应。
 脚本只做一次最小请求，不执行 Agent 工具或修改目标仓库。
 
 ## 入口与参数
 
-脚本文件为 `test_llm_service.py`，默认读取仓库根目录的 `config.toml`，并支持
+脚本文件为 `scripts/test_llm_service.py`，默认读取仓库根目录的 `config.toml`，并支持
 `--config PATH` 指定其他配置文件。测试模型使用配置中的 `active_model`，不额外
 引入模型选择逻辑，保证测试结果与默认 CLI 配置一致。
 
 调用示例：
 
 ```bash
-uv run python test_llm_service.py
-uv run python test_llm_service.py --config /path/to/config.toml
+uv run python scripts/test_llm_service.py
+uv run python scripts/test_llm_service.py --config /path/to/config.toml
 ```
 
 ## 实现与数据流

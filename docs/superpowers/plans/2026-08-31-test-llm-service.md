@@ -24,7 +24,7 @@ from pathlib import Path
 import pytest
 
 from nano_vibe.models.base import ModelResponse
-from test_llm_service import main
+from scripts.test_llm_service import main
 
 
 def write_config(path: Path, api_key: str = "secret-key") -> None:
@@ -87,16 +87,16 @@ def test_main_redacts_api_key_when_service_fails(tmp_path: Path, capsys, monkeyp
 
 Run: `uv run pytest -q tests/unit/test_llm_service.py`
 
-Expected: collection/import failure because `test_llm_service.py` and `create_model` do not exist yet.
+Expected: collection/import failure because `scripts/test_llm_service.py` and `create_model` do not exist yet.
 
 ### Task 2: 根目录 CLI 实现
 
 **Files:**
-- Create: `test_llm_service.py`
+- Create: `scripts/test_llm_service.py`
 
 - [ ] **Step 1: Implement the minimal public seams used by the tests**
 
-In `test_llm_service.py`, define `DEFAULT_CONFIG_PATH` as the repository-root `config.toml`,
+In `scripts/test_llm_service.py`, define `DEFAULT_CONFIG_PATH` as the repository-root `config.toml`,
 `EXIT_OK = 0`, `EXIT_SERVICE_ERROR = 1`, and `EXIT_CONFIG_ERROR = 2`. Define
 `create_model(config: AppConfig) -> OpenAICompatibleModel`,
 `async check_service(config: AppConfig, model: Model, timeout_seconds: float = 30.0) -> ModelResponse`,
@@ -117,21 +117,21 @@ Expected: 3 passed.
 
 - [ ] **Step 3: Verify the CLI help and offline configuration error**
 
-Run: `uv run python test_llm_service.py --help` and `uv run python test_llm_service.py --config /tmp/nano-vibe-missing-config.toml`.
+Run: `uv run python scripts/test_llm_service.py --help` and `uv run python scripts/test_llm_service.py --config /tmp/nano-vibe-missing-config.toml`.
 
 Expected: help exits 0; missing config exits 2 and prints a Chinese configuration error to stderr without a traceback.
 
 - [ ] **Step 4: Commit the self-contained script and tests**
 
 ```bash
-git add test_llm_service.py tests/unit/test_llm_service.py
+git add scripts/test_llm_service.py tests/unit/test_llm_service.py
 git commit -m "增加 LLM 服务配置测试脚本"
 ```
 
 ### Task 3: 完整验证与交付
 
 **Files:**
-- Verify: `test_llm_service.py`, `tests/unit/test_llm_service.py`
+- Verify: `scripts/test_llm_service.py`, `tests/unit/test_llm_service.py`
 
 - [ ] **Step 1: Run the full Python test suite**
 
@@ -141,7 +141,7 @@ Expected: all existing tests pass; no network request is made by the new tests.
 
 - [ ] **Step 2: Run static checks for the changed Python files**
 
-Run: `uv run ruff check test_llm_service.py tests/unit/test_llm_service.py` and `uv run pyright`.
+Run: `uv run ruff check scripts/test_llm_service.py tests/unit/test_llm_service.py` and `uv run pyright`.
 
 Expected: Ruff reports no violations and Pyright reports 0 errors.
 

@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Any
 
 from nano_vibe.tools.base import ToolResult
-from test_web_search import SearchCheckError, main
+from scripts.test_web_search import SearchCheckError, main
 
 
 def write_config(tmp_path: Path, api_key: str = "config-key") -> Path:
@@ -43,7 +43,7 @@ def test_main_runs_live_check_only_when_requested(
         calls.append(query)
         return ToolResult.success('{"results": [{"title": "ok"}]}')
 
-    monkeypatch.setattr("test_web_search.check_service", fake_check_service)
+    monkeypatch.setattr("scripts.test_web_search.check_service", fake_check_service)
 
     assert main(["--config", str(config_path), "--query", "python", "--live"]) == 0
     assert calls == ["python"]
@@ -58,7 +58,7 @@ def test_main_returns_service_error_without_leaking_config_key(
     async def fake_check_service(*_: Any, **__: Any) -> ToolResult:
         raise SearchCheckError("request failed with config-key")
 
-    monkeypatch.setattr("test_web_search.check_service", fake_check_service)
+    monkeypatch.setattr("scripts.test_web_search.check_service", fake_check_service)
 
     assert main(["--config", str(config_path), "--live"]) == 1
     captured = capsys.readouterr()

@@ -4,7 +4,7 @@
 
 **Goal:** 让 Tavily Search/Extract 支持从 `config.toml` 加载密钥，并提供根目录 CLI 检查配置及可选真实搜索请求。
 
-**Architecture:** `load_config` 将 `[tavily].api_key` 放入不可变 `TavilyConfig`，`Session.from_config` 把它传给现有 Tavily 工具；工具继续兼容进程环境变量和显式 dotenv 文件。新增 `test_web_search.py` 复用配置加载和 `WebSearchTool`，默认只检查配置/SDK，`--live` 才发起一次真实网络请求。
+**Architecture:** `load_config` 将 `[tavily].api_key` 放入不可变 `TavilyConfig`，`Session.from_config` 把它传给现有 Tavily 工具；工具继续兼容进程环境变量和显式 dotenv 文件。新增 `scripts/test_web_search.py` 复用配置加载和 `WebSearchTool`，默认只检查配置/SDK，`--live` 才发起一次真实网络请求。
 
 **Tech Stack:** Python 3.10+, TOML、argparse、asyncio、现有 Tavily SDK 适配、pytest/pytest-asyncio。
 
@@ -67,7 +67,7 @@ git commit -m "支持从配置文件加载 Tavily 密钥"
 ### Task 2: 新增 web_search 可用性检查 CLI
 
 **Files:**
-- Create: `test_web_search.py`
+- Create: `scripts/test_web_search.py`
 - Create: `tests/unit/test_web_search_service.py`
 
 - [ ] **Step 1: Write failing CLI tests**
@@ -103,13 +103,13 @@ def test_main_returns_config_error_for_missing_file(tmp_path, capsys):
 
 Run: `uv run pytest -q tests/unit/test_web_search_service.py`
 
-Expected: import failure because `test_web_search.py` does not exist yet.
+Expected: import failure because `scripts/test_web_search.py` does not exist yet.
 
 - [ ] **Step 3: Implement the CLI**
 
-在根目录创建 `test_web_search.py`，定义：
+在 `scripts/` 目录创建 `test_web_search.py`，定义：
 
-- `DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "config.toml"`；
+- `DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config.toml"`；
 - 退出码 `0`（可用/配置有效）、`1`（真实请求失败）、`2`（配置错误）；
 - `create_tool(config)`，把 `config.tavily.api_key`、`env_file` 传给 `WebSearchTool`；
 - `async check_service(config, query, tool=None, timeout_seconds=30.0)`，通过
@@ -129,22 +129,22 @@ Expected: all CLI tests pass without网络访问。
 
 - [ ] **Step 5: Verify CLI help and local configuration mode**
 
-Run: `uv run python test_web_search.py --help` and
-`uv run python test_web_search.py --config /tmp/nano-vibe-missing-tavily.toml`。
+Run: `uv run python scripts/test_web_search.py --help` and
+`uv run python scripts/test_web_search.py --config /tmp/nano-vibe-missing-tavily.toml`。
 
 Expected: help exits 0；缺失配置退出 2，stderr 为中文配置错误且无 traceback。
 
 - [ ] **Step 6: Commit the CLI and tests**
 
 ```bash
-git add test_web_search.py tests/unit/test_web_search_service.py
+git add scripts/test_web_search.py tests/unit/test_web_search_service.py
 git commit -m "增加 web_search 可用性测试脚本"
 ```
 
 ### Task 3: 完整验证与交付
 
 **Files:**
-- Verify: `src/nano_vibe/config.py`, `src/nano_vibe/session.py`, `src/nano_vibe/tools/web_search.py`, `test_web_search.py`
+- Verify: `src/nano_vibe/config.py`, `src/nano_vibe/session.py`, `src/nano_vibe/tools/web_search.py`, `scripts/test_web_search.py`
 
 - [ ] **Step 1: Run the full Python test suite**
 
@@ -154,7 +154,7 @@ Expected: all tests pass；默认测试不访问网络，Tavily live 集成测�
 
 - [ ] **Step 2: Run static checks**
 
-Run: `uv run ruff check src tests test_web_search.py`、`uv run pyright` 和
+Run: `uv run ruff check src tests scripts/test_web_search.py`、`uv run pyright` 和
 `git diff --check`。
 
 Expected: Ruff、Pyright、空白检查均通过。

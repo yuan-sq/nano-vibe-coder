@@ -210,14 +210,7 @@ TAVILY_API_KEY=tvly-your-key
 
 也可以在根目录 `config.toml` 的 `[tavily]` 中设置 `api_key`，或者把 `env_file` 改为相对目标工作区的路径或绝对路径。程序不会扫描其他目录寻找 `.env`。
 
-Search 使用 `basic` 深度并最多返回 5 条结果；Extract 一次最多处理 5 个 URL、30,000 个字符。诊断脚本默认只检查配置和 SDK，添加 `--live` 才会真正联网：
-
-```bash
-uv run python scripts/test_web_search.py
-uv run python scripts/test_web_search.py --live --query "Python 3.13"
-```
-
-测试套件默认离线。运行仓库中的 Tavily live 集成测试需要同时显式提供开关和密钥：
+Search 使用 `basic` 深度并最多返回 5 条结果；Extract 一次最多处理 5 个 URL、30,000 个字符。测试套件默认离线。运行 Tavily live 集成测试需要同时显式提供开关和密钥：
 
 ```bash
 NANO_VIBE_LIVE_TAVILY=1 uv run pytest tests/integration/test_tavily_live.py -q
@@ -267,8 +260,6 @@ src/nano_vibe/
 
 frontend/           # React、TypeScript、Vite GUI
 tests/              # 后端单元与集成测试
-scripts/            # LLM 和 Tavily 诊断脚本
-docs/               # 设计、计划和项目文档
 ```
 
 ## 开发检查

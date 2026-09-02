@@ -2,23 +2,22 @@
 
 > 从模糊的需求到可靠的软件。
 
-nano-vibe-coder 是一个面向本地 Git 仓库的 Coding Agent。它不依赖 Agent 框架，模型调用循环、工具调度、上下文管理、会话恢复、权限审批和 GUI 事件协议都由项目自行实现。
+用户交给 Coding Agent 的，常常只有一句模糊的需求：“做一个好看、好用的 TUI。”但从一句话到可交付的软件，中间还要经过需求分析、方案规划、代码实现和结果验证。
+
+nano-vibe-coder 是一个面向本地 Git 仓库的 Coding Agent。它把这些容易被模型临场略过的步骤组织成明确的工程流程，并用有限状态机约束任务如何向前推进。项目不依赖 Agent 框架；模型调用循环、工具调度、上下文管理、会话恢复、权限审批和 GUI 事件协议都由本项目实现。
+
+![从模糊的需求到可靠的软件](assets/goal.png)
 
 公开仓库：[github.com/yuan-sq/nano-vibe-coder](https://github.com/yuan-sq/nano-vibe-coder)
 
-## 为什么要做这个项目
-代码生成并不是软件开发的全部。很多失败发生在写代码之前和之后：Agent 没有理解用户真正想要什么，或者代码看起来已经完成，却没有经过可靠的验证。
+## 让 Agent 按软件工程流程工作
 
-nano-vibe-coder 把一次编码任务建模为有限状态机：
+代码能够生成，不代表任务已经完成。Agent 可能还没弄清用户真正想要什么，也可能在代码看似可用时过早结束。nano-vibe-coder 因此把一次编码任务拆成五个阶段：
 
 ```text
 REQUIREMENTS → PLAN → IMPLEMENT → VERIFY → DONE
      需求分析      计划       实现        验证      完成
 ```
-
-![从模糊的需求到可靠的软件](assets/goal.png)
-
-第一张图概括项目目标：让模糊需求经过软件工程过程，最终变成可靠软件。
 
 REQUIREMENTS 和 VERIFY 是两个独立阶段。前者要求 Agent 先阅读仓库、识别约束并澄清需求；后者要求它运行检查，失败时返回 PLAN 或 IMPLEMENT 修正。这个设计把“先想清楚”和“确认真的可用”写进运行流程，而不是只靠模型临场记住。
 
@@ -47,7 +46,7 @@ Plan Todo 只接受 `pending`、`in_progress`、`completed` 三种状态，同�
 | 工具主要由模型自行选择 | 状态机为每个阶段提供不同的工具白名单 |
 | 过程信息散落在对话里 | Plan、Diff、Trace 和 SessionSnapshot 分别记录计划、变更、事件和恢复状态 |
 
-这张表描述的是运行结构，而不是对所有 Agent 产品的优劣判断。
+这里比较的是运行结构，不评价具体 Agent 产品的优劣。
 
 ## 已实现的功能
 

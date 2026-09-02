@@ -16,9 +16,9 @@ REQUIREMENTS → PLAN → IMPLEMENT → VERIFY → DONE
      需求分析      计划       实现        验证      完成
 ```
 
-![从模糊需求到软件产品的工程过程](assets/readme/requirements-gap.png)
+![从模糊的需求到可靠的软件](assets/readme/goal-v2.png)
 
-图中问号代表直接从需求跳到代码时缺少的工程过程。
+第一张图概括项目目标：让模糊需求经过软件工程过程，最终变成可靠软件。
 
 REQUIREMENTS 和 VERIFY 是两个独立阶段。前者要求 Agent 先阅读仓库、识别约束并澄清需求；后者要求它运行检查，失败时返回 PLAN 或 IMPLEMENT 修正。这个设计把“先想清楚”和“确认真的可用”写进运行流程，而不是只靠模型临场记住。
 
@@ -38,7 +38,7 @@ REQUIREMENTS 和 VERIFY 是两个独立阶段。前者要求 Agent 先阅读仓�
 
 Plan Todo 只接受 `pending`、`in_progress`、`completed` 三种状态，同时最多有一个条目处于 `in_progress`。空计划或存在未完成条目时，状态机拒绝进入 DONE。
 
-![nano-vibe-coder 五阶段有限状态机](assets/readme/state-machine.png)
+![模拟真实的软件工程过程](assets/readme/process-v2.png)
 
 ### 与常见 Coding Agent 的设计差异
 
@@ -51,7 +51,7 @@ Plan Todo 只接受 `pending`、`in_progress`、`completed` 三种状态，同�
 
 这张表描述的是运行结构，而不是对所有 Agent 产品的优劣判断。
 
-![Typical Coding Agent 与 nano-vibe-coder 的流程对比](assets/readme/agent-comparison.png)
+![把 Coding Agent 建模为有限状态机](assets/readme/fsm-v2.png)
 
 ## 已实现的功能
 

@@ -38,8 +38,6 @@ REQUIREMENTS 和 VERIFY 是两个独立阶段。前者要求 Agent 先阅读仓�
 
 Plan Todo 只接受 `pending`、`in_progress`、`completed` 三种状态，同时最多有一个条目处于 `in_progress`。空计划或存在未完成条目时，状态机拒绝进入 DONE。
 
-![模拟真实的软件工程过程](assets/readme/process-v2.png)
-
 ### 与常见 Coding Agent 的设计差异
 
 | 常见的规划与编码循环 | nano-vibe-coder |
@@ -50,8 +48,6 @@ Plan Todo 只接受 `pending`、`in_progress`、`completed` 三种状态，同�
 | 过程信息散落在对话里 | Plan、Diff、Trace 和 SessionSnapshot 分别记录计划、变更、事件和恢复状态 |
 
 这张表描述的是运行结构，而不是对所有 Agent 产品的优劣判断。
-
-![把 Coding Agent 建模为有限状态机](assets/readme/fsm-v2.png)
 
 ## 已实现的功能
 

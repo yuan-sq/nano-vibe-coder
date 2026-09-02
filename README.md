@@ -16,7 +16,7 @@ REQUIREMENTS → PLAN → IMPLEMENT → VERIFY → DONE
      需求分析      计划       实现        验证      完成
 ```
 
-![从模糊的需求到可靠的软件](assets/readme/goal-v2.png)
+![从模糊的需求到可靠的软件](assets/goal.png)
 
 第一张图概括项目目标：让模糊需求经过软件工程过程，最终变成可靠软件。
 

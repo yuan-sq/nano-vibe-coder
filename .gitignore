@@ -8,6 +8,8 @@ config.toml
 .env
 runs/
 .nano-vibe/
+/scripts/
+/docs/
 dist/
 build/
 *.egg-info/

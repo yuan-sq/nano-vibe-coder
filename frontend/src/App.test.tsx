@@ -103,6 +103,17 @@ describe("App shell layout", () => {
     expect(screen.getByPlaceholderText("描述你要完成的任务…")).toBeInTheDocument();
   });
 
+  it("renders the current agent stage as a stage label", async () => {
+    useGuiStore.getState().setActiveSession("session-1");
+    testState.returnCleanSnapshot = true;
+    testState.returnIdleSnapshot = true;
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><App /></QueryClientProvider>);
+
+    expect(await screen.findByText("REQUIREMENTS 阶段")).toBeInTheDocument();
+    expect(screen.queryByText("IDLE · Agent REQUIREMENTS")).not.toBeInTheDocument();
+  });
+
   it("resyncs the snapshot when an interaction result is stale", async () => {
     useGuiStore.getState().setActiveSession("session-1");
     useGuiStore.getState().hydrate("session-1", {
